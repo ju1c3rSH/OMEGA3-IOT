@@ -6,6 +6,16 @@ import (
 	"strings"
 )
 
+type PropertyMeta struct {
+	Writable    bool
+	Description string
+	Unit        string
+	Range       []int
+	Format      string
+	Enum        []string
+	//TODO Required Type ?
+}
+
 func parseMeta(metaStr string) map[string]string {
 	meta := make(map[string]string)
 	if metaStr == "" {

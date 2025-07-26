@@ -1,5 +1,5 @@
 database:
-  dsn: OMEGA3:OMEGA#@tcp(192.168.2.118:3306)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
+  dsn: OMEGA3:OMEGA#@tcp(192.168.2.118/:3306)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
 
 server:
   port: 8000

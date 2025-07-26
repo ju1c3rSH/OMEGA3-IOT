@@ -1,8 +1,10 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
+	"OMEGA3-IOT/internal/utils"
+	"gopkg.in/yaml.v3"
+	"io/ioutil"
+	"time"
 )
 
 type Instance struct {
@@ -13,31 +15,14 @@ type Instance struct {
 	Online       bool       `json:"online" example:"true"`
 	OwnerUUID    string     `json:"owner_uuid" example:""`
 	Description  string     `json:"description,omitempty" example:"前门防盗设备"`
-	AddTime      int        `json:"add_time" example:"1751193600"`
-	LastSeen     int        `json:"last_seen" example:"1751193600"`
+	AddTime      int64      `json:"add_time" example:"1751193600"`
+	LastSeen     int64      `json:"last_seen" example:"1751193600"`
 	Activated    bool       `json:"activated" gorm:"default:false"`
 	ActivateTime int64      `json:"activate_time,omitempty"`
 	Properties   Properties `json:"properties" gorm:"type:json"`
 	//privatekey?
 }
-type Properties struct {
-	Items map[string]*Property `json:"items"`
-}
 
-type PropertyItem struct {
-	Value string       `json:"value"`
-	Meta  PropertyMeta `json:"meta"`
-}
-
-type PropertyMeta struct {
-	Writable    bool
-	Description string
-	Unit        string
-	Range       []int
-	Format      string
-	Enum        []string
-	//TODO Required Type ?
-}
 type DeviceTemplate struct {
 	Type        string                  `json:"type" gorm:"primaryKey"`
 	Name        string                  `json:"name"`
@@ -45,65 +30,91 @@ type DeviceTemplate struct {
 	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
 	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
 }
+type DeviceType struct {
+	ID   int    `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
+	//DisplayName string                 `yaml:"display_name" json:"display_name"`
+	Description string                  `yaml:"description" json:"description"`
+	Properties  map[string]PropertyMeta `yaml:"properties" json:"properties"`
+}
+type DeviceAddTemplate struct {
+	Name        string `json:"name" gorm:"primaryKey"`
+	Description string `json:"description"`
+	Type        int    `json:"type" gorm:"primaryKey"`
+	SN          string `json:"sn" gorm:"primaryKey"`
+}
 
 type ActionMeta struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
 	Parameters  map[string]interface{} `json:"parameters"`
 }
-type Property interface {
-	GetValue(name string) (interface{}, error)
-	SetValue(name string, value interface{}) error
-	GetAll() map[string]interface{}
-	GetMeta() map[string]PropertyMeta
+type DeviceTypeManager struct {
+	types map[string]*DeviceType
+	ids   map[int]*DeviceType
 }
 
-// TODO: 动态 Meta 管理模块
-// - [ ] 支持从数据库加载 Meta 数据 [[4]]
-// - [ ] 支持通过 API 更新 Meta 数据
-// - [ ] 支持热更新（不重启服务）[[1]]
-// - [ ] 支持多设备类型统一管理 [[7]]
-
-var PropertyMetaMap = map[string]map[string]PropertyMeta{
-	"smart_lamp": {
-		"switch": {
-			Writable:    true,
-			Description: "开关状态",
-		},
-		"brightness": {
-			Writable:    true,
-			Description: "亮度百分比",
-			Unit:        "%",
-			Range:       []int{0, 100},
-		},
-		"color": {
-			Writable:    true,
-			Description: "颜色值",
-			Format:      "hex",
-		},
-	},
+var GlobalDeviceTypeManager = &DeviceTypeManager{
+	types: make(map[string]*DeviceType),
+	ids:   make(map[int]*DeviceType),
 }
 
-type TestDevice struct {
-	Type         string `json:"type" meta:"writeable:true,description: A type of test"`
-	BatteryLevel int    `json:"battery_level" meta:"writeable:true,description: Battery level of test"`
-}
-
-func NewProperty(data []byte) (Property, error) {
-	typeHint := struct {
-		Type string `json:"type"`
-	}{}
-
-	if err := json.Unmarshal(data, &typeHint); err != nil {
-		return nil, err
+func (dtm *DeviceTypeManager) LoadFromYAML(filePath string) error {
+	data, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return err
 	}
 
-	switch typeHint.Type {
-	case "test_device":
-		var p TestDevice
-		return &p, json.Unmarshal(data, &p)
-
-	default:
-		return nil, fmt.Errorf("unknown property type: %s", typeHint.Type)
+	var config struct {
+		DeviceTypes []*DeviceType `yaml:"device_types"`
 	}
+
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return err
+	}
+
+	dtm.types = make(map[string]*DeviceType)
+	dtm.ids = make(map[int]*DeviceType)
+
+	for _, dt := range config.DeviceTypes {
+		dtm.types[dt.Name] = dt
+		dtm.ids[dt.ID] = dt
+	}
+
+	return nil
+}
+
+// 获取设备的类型
+func (dtm *DeviceTypeManager) GetByName(name string) (*DeviceType, bool) {
+	dt, exists := dtm.types[name]
+	return dt, exists
+}
+
+// 验证设备类型
+func (dtm *DeviceTypeManager) IsValidType(name string) bool {
+	_, exists := dtm.types[name]
+	return exists
+}
+
+func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType) (*Instance, error) {
+	props := Properties{Items: make(map[string]*PropertyItem)}
+	for propName, meta := range deviceType.Properties {
+		props.Items[propName] = &PropertyItem{
+			//Value: getDefaultValue(meta.Type),
+			Meta: meta,
+		}
+
+	}
+	return &Instance{
+		InstanceUUID: utils.GenerateUUID().String(),
+		Name:         name,
+		Type:         deviceType.Name,
+		Online:       false,
+		OwnerUUID:    ownerUuid,
+		Description:  deviceType.Description,
+		AddTime:      time.Now().Unix(),
+		LastSeen:     time.Now().Unix(),
+		Properties:   props,
+	}, nil
+
 }

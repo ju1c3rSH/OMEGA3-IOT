@@ -1,38 +1,51 @@
 package model
 
-import "fmt"
+import (
+	"database/sql/driver"
+	"encoding/json"
+	"fmt"
+)
 
-func (t TestDevice) GetValue(name string) (interface{}, error) {
-	switch name {
-	case "BatteryLevel":
-		return int(t.BatteryLevel), nil
-	case "Type":
-		return t.Type, nil
-	default:
-		return nil, fmt.Errorf("Unknown device type: %s", name)
-
-	}
+type Properties struct {
+	Items map[string]*PropertyItem `json:"items"`
 }
 
-func (t TestDevice) SetValue(name string, value interface{}) error {
-	switch name {
-	case "BatteryLevel":
-		t.BatteryLevel = value.(int)
-	case "Type":
-		t.Type = value.(string)
-	default:
-		return fmt.Errorf("prop not found", name)
+type PropertyItem struct {
+	Value string       `json:"value"`
+	Meta  PropertyMeta `json:"meta"`
+}
+
+func (p Properties) Value() (driver.Value, error) {
+	if p.Items == nil {
+		return nil, nil
 	}
+	return json.Marshal(p.Items)
+}
+
+func (p *Properties) Scan(value interface{}) error {
+	if value == nil {
+		p.Items = make(map[string]*PropertyItem)
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return fmt.Errorf("cannot scan %T into Properties", value)
+	}
+
+	items := make(map[string]*PropertyItem)
+	if err := json.Unmarshal(bytes, &items); err != nil {
+		return err
+	}
+
+	p.Items = items
 	return nil
 }
 
-func (t TestDevice) GetAll() map[string]interface{} {
-	return map[string]interface{}{
-		"BatteryLevel": t.BatteryLevel,
-		"Type":         t.Type,
-	}
-}
-
-func (t TestDevice) GetMeta() map[string]PropertyMeta {
-	return nil
+type Property interface {
+	GetValue(name string) (interface{}, error)
+	SetValue(name string, value interface{}) error
+	GetAll() map[string]interface{}
+	GetMeta() map[string]PropertyMeta
+	//这段是弃用代码
 }

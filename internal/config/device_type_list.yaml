@@ -1,0 +1,11 @@
+device_types:
+  -id: 1
+  name: "BaseTracker"
+  description: "A Tracker"
+  properties:
+    battery_level:
+    Writable: true
+    Description: "电量"
+    Unit: "%"
+    Range: [0,100]
+    format: int

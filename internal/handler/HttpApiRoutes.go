@@ -11,7 +11,6 @@ import (
 )
 
 func RegRoutes(router *gin.Engine) {
-	//注册的逻辑
 	apiGroup := router.Group("/api/v1")
 	apiGroup.GET("/GetTest", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
@@ -25,6 +24,7 @@ func RegRoutes(router *gin.Engine) {
 
 		if err := c.ShouldBind(&RU); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			print("nothing in param")
 			return
 		}
 		print(RU.Username)
@@ -125,6 +125,16 @@ func RegRoutes(router *gin.Engine) {
 					"last_ip":    user.IP,
 				},
 			})
+		})
+
+		protected.POST("/AddDevice", func(c *gin.Context) {
+			var input model.DeviceAddTemplate
+
+			if err := c.ShouldBind(&input); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+
 		})
 	}
 }

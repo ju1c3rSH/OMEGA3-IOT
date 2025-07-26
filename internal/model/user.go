@@ -7,23 +7,19 @@ import (
 
 type User struct {
 	ID           uint   `gorm:"primaryKey;autoIncrement"`
-	UserUUID     string `json:"user_uuid"`
-	UserName     string `json:"user_name" example:"dev_001"  validate:"required,min=3,max=20"`
-	Type         int    `json:"type" example:"door_sensor"`
-	Online       bool   `json:"online" example:"true"`
-	Description  string `json:"description,omitempty" example:"自我介绍"`
-	LastSeen     int64  `json:"last_seen" example:"1751193600"`
-	IP           string `json:"ip" example:"<UNK>"`
-	PasswordHash string `json:"password_hash" example:"<UNK>" gorm:"not null"`
-	CreatedAt    int64  `json:"created_at" example:"1751193600"`
-	UpdatedAt    int64  `json:"updated_at" example:"1751193600"`
-	Role         int    `json:"role" example:"1"`
-	Status       int    `json:"status" example:"1"`
-	//Status 0:OK ; 1:Blocked
-	//Role 0:Admin ;1:User
-	//privatekey?
+	UserUUID     string `json:"user_uuid" gorm:"uniqueIndex;not null;type:char(36)"`
+	UserName     string `json:"user_name" gorm:"uniqueIndex;not null;size:50" validate:"required,min=3,max=20"`
+	Type         int    `json:"type" example:"1"`
+	Online       bool   `json:"online"`
+	Description  string `json:"description,omitempty"`
+	LastSeen     int64  `json:"last_seen"`
+	IP           string `json:"ip" gorm:"size:45"` // 支持IPv6
+	PasswordHash string `json:"password_hash" gorm:"not null"`
+	CreatedAt    int64  `json:"created_at"`
+	UpdatedAt    int64  `json:"updated_at"`
+	Role         int    `json:"role" gorm:"index:idx_role_status"`
+	Status       int    `json:"status" gorm:"index:idx_role_status"`
 }
-
 type RegUser struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
