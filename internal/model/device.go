@@ -2,25 +2,25 @@ package model
 
 import (
 	"OMEGA3-IOT/internal/utils"
+	"fmt"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"time"
 )
 
 type Instance struct {
-	ID           int        `gorm:"primaryKey;autoIncrement" json:"id" `
-	InstanceUUID string     `json:"instance_uuid"`
-	Name         string     `json:"name" `
-	Type         string     `json:"type" example:"door_sensor"`
-	Online       bool       `json:"online" example:"true"`
-	OwnerUUID    string     `json:"owner_uuid" example:""`
-	Description  string     `json:"description,omitempty" example:"前门防盗设备"`
-	AddTime      int64      `json:"add_time" example:"1751193600"`
-	LastSeen     int64      `json:"last_seen" example:"1751193600"`
-	Activated    bool       `json:"activated" gorm:"default:false"`
-	ActivateTime int64      `json:"activate_time,omitempty"`
-	Properties   Properties `json:"properties" gorm:"type:json"`
-	//privatekey?
+	ID           uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	InstanceUUID string     `gorm:"uniqueIndex;type:varchar(36)" json:"instance_uuid"`
+	Name         string     `gorm:"type:varchar(100);not null" json:"name"`
+	Type         string     `gorm:"type:varchar(50);not null;index" json:"type"`
+	Online       bool       `gorm:"default:false" json:"online"`
+	OwnerUUID    string     `gorm:"type:varchar(36);not null;index" json:"owner_uuid"`
+	Description  string     `gorm:"type:text" json:"description,omitempty"`
+	AddTime      int64      `gorm:"not null" json:"add_time"`
+	LastSeen     int64      `gorm:"not null" json:"last_seen"`
+	Properties   Properties `gorm:"type:json" json:"properties"`
+	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt    time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 type DeviceTemplate struct {
@@ -87,6 +87,7 @@ func (dtm *DeviceTypeManager) LoadFromYAML(filePath string) error {
 // 获取设备的类型
 func (dtm *DeviceTypeManager) GetByName(name string) (*DeviceType, bool) {
 	dt, exists := dtm.types[name]
+	fmt.Println(dtm.ids[0])
 	return dt, exists
 }
 
@@ -118,3 +119,6 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 	}, nil
 
 }
+
+//Let me think , what should i do in next step?shall i put this factory_function to web api directly?maybe not.Because i havent deal the problems in database to save props.After it, i should make a history system to record the changes of the devices,but i dont know how to design a LINEAR Save System....
+//So,deal with the Properties to save in mysql(in Json)First.

@@ -1,5 +1,6 @@
 package utils
 
+/*
 import (
 	"OMEGA3-IOT/internal/model"
 	"database/sql/driver"
@@ -39,3 +40,5 @@ func (p *StoredProperties) Scan(src interface{}) error {
 		return fmt.Errorf("unsupported type: %T", src)
 	}
 }
+
+*/

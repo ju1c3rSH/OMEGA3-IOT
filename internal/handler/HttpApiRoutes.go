@@ -6,7 +6,11 @@ import (
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/utils"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/context"
+	"gorm.io/gorm"
+	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -128,13 +132,66 @@ func RegRoutes(router *gin.Engine) {
 		})
 
 		protected.POST("/AddDevice", func(c *gin.Context) {
-			var input model.DeviceAddTemplate
+			var input struct {
+				Name        string `json:"name" binding:"required"`
+				DeviceType  string `json:"device_type" binding:"required"`
+				Description string `json:"description,omitempty"`
+			}
 
 			if err := c.ShouldBind(&input); err != nil {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
 
+			// 从 JWT 获取用户信息
+			userUUID, exists := c.Get("user_uuid")
+			if !exists {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+				return
+			}
+
+			// 验证设备类型
+			deviceType, valid := model.GlobalDeviceTypeManager.GetByName(input.DeviceType)
+			if !valid {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type: " + input.DeviceType})
+				return
+			}
+
+			// 生成设备实例
+			//deviceUUID := utils.GenerateUUID().String()
+			instance, _ := model.NewInstanceFromConfig(input.Name, userUUID.(string), deviceType)
+			instance.Description = input.Description
+
+			// 保存到数据库 - 现在会正确保存到 instances 表
+			dbConn := db.DB.Session(&gorm.Session{SkipDefaultTransaction: true})
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			if err := dbConn.WithContext(ctx).Create(&instance).Error; err != nil {
+				// 检查具体错误类型
+				if strings.Contains(err.Error(), "Duplicate entry") {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Device name already exists"})
+					return
+				}
+				log.Printf("Failed to create device: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device: " + err.Error()})
+				return
+			}
+
+			c.JSON(http.StatusOK, gin.H{
+				"message": "Device created successfully",
+				"device": gin.H{
+					"id":          instance.ID,
+					"uuid":        instance.InstanceUUID,
+					"name":        instance.Name,
+					"type":        instance.Type,
+					"online":      instance.Online,
+					"description": instance.Description,
+					"created_at":  instance.AddTime,
+					"last_seen":   instance.LastSeen,
+					"properties":  instance.Properties.Items,
+				},
+			})
 		})
 	}
 }

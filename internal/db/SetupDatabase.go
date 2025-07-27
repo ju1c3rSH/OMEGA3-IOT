@@ -20,7 +20,7 @@ func InitDB(config config.Config) {
 		log.Fatal(err)
 	}
 
-	if err := DB.AutoMigrate(&model.User{}); err != nil {
+	if err := DB.AutoMigrate(&model.User{}, &model.Instance{}); err != nil {
 		log.Fatal(err)
 	}
 
