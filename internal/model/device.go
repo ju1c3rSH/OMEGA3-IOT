@@ -3,8 +3,8 @@ package model
 import (
 	"OMEGA3-IOT/internal/utils"
 	"fmt"
-	"gopkg.in/yaml.v3"
-	"io/ioutil"
+	"github.com/spf13/viper"
+	"sync"
 	"time"
 )
 
@@ -30,12 +30,21 @@ type DeviceTemplate struct {
 	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
 	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
 }
+
+/*
+	type DeviceType struct {
+		ID   int    `mapstructure:"id" yaml:"id" json:"id"`
+		Name string `mapsyructure:"name" yaml:"name" json:"name"`
+		//DisplayName string                 `yaml:"display_name" json:"display_name"`
+		Description string                  `mapstructure:"description" yaml:"description" json:"description"`
+		Properties  map[string]PropertyMeta `mapstructure:"description" yaml:"properties" json:"properties"`
+	}
+*/
 type DeviceType struct {
-	ID   int    `yaml:"id" json:"id"`
-	Name string `yaml:"name" json:"name"`
-	//DisplayName string                 `yaml:"display_name" json:"display_name"`
-	Description string                  `yaml:"description" json:"description"`
-	Properties  map[string]PropertyMeta `yaml:"properties" json:"properties"`
+	ID          int                     `mapstructure:"id" yaml:"id"`
+	Name        string                  `mapstructure:"name" yaml:"name"`
+	Description string                  `mapstructure:"description" yaml:"description"`
+	Properties  map[string]PropertyMeta `mapstructure:"properties" yaml:"properties"`
 }
 type DeviceAddTemplate struct {
 	Name        string `json:"name" gorm:"primaryKey"`
@@ -52,6 +61,7 @@ type ActionMeta struct {
 type DeviceTypeManager struct {
 	types map[string]*DeviceType
 	ids   map[int]*DeviceType
+	mu    sync.RWMutex
 }
 
 var GlobalDeviceTypeManager = &DeviceTypeManager{
@@ -59,39 +69,62 @@ var GlobalDeviceTypeManager = &DeviceTypeManager{
 	ids:   make(map[int]*DeviceType),
 }
 
-func (dtm *DeviceTypeManager) LoadFromYAML(filePath string) error {
-	data, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return err
+func (dtm *DeviceTypeManager) LoadDeviceTypeFromYAML(filePath string) error {
+	//TODO 也许这里可以封装起来，让其可以load any?
+
+	v := viper.New()
+	v.SetConfigFile(filePath)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		return fmt.Errorf("could not load config: %v", err)
 	}
 
-	var config struct {
-		DeviceTypes []*DeviceType `yaml:"device_types"`
+	//var deviceTypes []*DeviceType不适用指针数组
+	var deviceTypesConfig struct {
+		DeviceTypes []DeviceType `mapstructure:"device_types" yaml:"device_types"`
+	}
+	if err := v.Unmarshal(&deviceTypesConfig); err != nil {
+		return fmt.Errorf("could not unmarshal config: %v", err)
 	}
 
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return err
-	}
+	dtm.mu.Lock()
+	defer dtm.mu.Unlock()
 
 	dtm.types = make(map[string]*DeviceType)
 	dtm.ids = make(map[int]*DeviceType)
 
-	for _, dt := range config.DeviceTypes {
-		dtm.types[dt.Name] = dt
-		dtm.ids[dt.ID] = dt
-	}
+	for i, dt := range deviceTypesConfig.DeviceTypes {
+		deviceType := &dt
+		fmt.Printf("Processing: %+v\n", deviceType)
 
+		if deviceType.Name == "" {
+			fmt.Printf("Warning: Device type %d has empty name\n", i)
+			continue
+			//debug msg...
+		}
+		if deviceType.ID <= 0 {
+			fmt.Printf("Warning: Device type %s has invalid ID\n", deviceType.Name)
+			continue
+		}
+
+		dtm.ids[deviceType.ID] = deviceType
+		dtm.types[deviceType.Name] = deviceType
+	}
 	return nil
 }
 
-// 获取设备的类型
 func (dtm *DeviceTypeManager) GetByName(name string) (*DeviceType, bool) {
 	dt, exists := dtm.types[name]
-	fmt.Println(dtm.ids[0])
+	//fmt.Println(dtm.ids[0])
 	return dt, exists
 }
 
-// 验证设备类型
+func (dtm *DeviceTypeManager) GetById(id int) (*DeviceType, bool) {
+	dt, exists := dtm.ids[id]
+	return dt, exists
+}
+
+// IsValidType 是验证设备类型
 func (dtm *DeviceTypeManager) IsValidType(name string) bool {
 	_, exists := dtm.types[name]
 	return exists

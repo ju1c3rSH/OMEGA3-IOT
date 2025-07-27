@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,7 +36,7 @@ func RegRoutes(router *gin.Engine) {
 		var existingUser model.User
 		dbConn := db.DB
 		if err := dbConn.Where("user_name = ?", RU.Username).First(&existingUser).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Username has already taken"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Username has already taken,err: " + err.Error()})
 		}
 
 		var hashedPassword, err = utils.HashPassword(RU.Password)
@@ -56,7 +57,7 @@ func RegRoutes(router *gin.Engine) {
 			UserUUID:     utils.GenerateUUID().String(),
 		}
 		if err := dbConn.Create(&newUser).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user,err: " + err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": newUser})
@@ -87,9 +88,10 @@ func RegRoutes(router *gin.Engine) {
 			return
 		}
 
-		user.LastSeen = time.Now().Unix()
-		user.IP = c.ClientIP()
-		dbConn.Save(&user)
+		dbConn.Model(&user).Updates(map[string]interface{}{
+			"last_seen": time.Now().Unix(),
+			"ip":        c.ClientIP(),
+		})
 		c.JSON(http.StatusOK, gin.H{
 			"message":      "Login successful",
 			"access_token": accessToken,
@@ -134,7 +136,7 @@ func RegRoutes(router *gin.Engine) {
 		protected.POST("/AddDevice", func(c *gin.Context) {
 			var input struct {
 				Name        string `json:"name" binding:"required"`
-				DeviceType  string `json:"device_type" binding:"required"`
+				DeviceType  int    `json:"device_type" binding:"required"`
 				Description string `json:"description,omitempty"`
 			}
 
@@ -143,7 +145,6 @@ func RegRoutes(router *gin.Engine) {
 				return
 			}
 
-			// 从 JWT 获取用户信息
 			userUUID, exists := c.Get("user_uuid")
 			if !exists {
 				c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
@@ -151,9 +152,9 @@ func RegRoutes(router *gin.Engine) {
 			}
 
 			// 验证设备类型
-			deviceType, valid := model.GlobalDeviceTypeManager.GetByName(input.DeviceType)
+			deviceType, valid := model.GlobalDeviceTypeManager.GetById(input.DeviceType)
 			if !valid {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type: " + input.DeviceType})
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type: " + strconv.Itoa(input.DeviceType)})
 				return
 			}
 

@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/cmd/http-api"
 	"OMEGA3-IOT/internal/config"
 	"OMEGA3-IOT/internal/db"
+	"OMEGA3-IOT/internal/model"
 	"fmt"
 	"log"
 )
@@ -20,6 +21,11 @@ func main() {
 	fmt.Printf("Hello and welcome, %s!\n", s)
 	//cfg, err := config.LoadConfig(".")
 	cfg := config.LoadConfig("./internal/config")
+	if err := model.GlobalDeviceTypeManager.LoadDeviceTypeFromYAML("./internal/config/device_type_list.yaml"); err != nil {
+		log.Fatalf("Failed to load device types: %v", err)
+	}
+
+	log.Println("Device types loaded successfully")
 	db.InitDB(cfg)
 	httpApiErr := http_api.Run()
 	if httpApiErr != nil {

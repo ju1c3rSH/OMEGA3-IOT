@@ -3,6 +3,7 @@ package utils
 import (
 	"github.com/golang-jwt/jwt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -28,11 +29,21 @@ func GenerateToken(username string, userUUID string, role int) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(jwtSecret))
+	tokenString, err := token.SignedString([]byte(jwtSecret))
+	if err != nil {
+		return "", err
+	}
+	return "Bearer " + tokenString, nil
 }
+
+// All with bearer
 
 func ParseToken(tokenString string) (*UserClaims, error) {
 	claims := &UserClaims{}
+	if strings.HasPrefix(tokenString, "Bearer ") {
+		tokenString = tokenString[7:]
+	}
+
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte(jwtSecret), nil
 	})

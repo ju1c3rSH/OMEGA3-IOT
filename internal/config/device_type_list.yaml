@@ -1,11 +1,35 @@
+# config/device_types.yaml
 device_types:
-  -id: 1
-  name: "BaseTracker"
-  description: "A Tracker"
-  properties:
-    battery_level:
-    Writable: true
-    Description: "电量"
-    Unit: "%"
-    Range: [0,100]
-    format: int
+  - id: 1
+    name: "BaseTracker"
+    description: "A Tracker"
+    properties:
+      battery_level:
+        writable: true
+        description: "电量"
+        unit: "%"
+        range: [0, 100]
+        format: "int"
+      
+      gps_location:
+        writable: false
+        description: "GPS位置"
+        format: "string"
+
+  - id: 2
+    name: "SmartSensor"
+    description: "智能传感器"
+    properties:
+      temperature:
+        writable: false
+        description: "温度"
+        unit: "°C"
+        range: [-40, 85]
+        format: "float"
+      
+      humidity:
+        writable: false
+        description: "湿度"
+        unit: "%"
+        range: [0, 100]
+        format: "float"

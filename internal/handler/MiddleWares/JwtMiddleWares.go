@@ -5,11 +5,42 @@ import (
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func JwtAuthMiddleWare() gin.HandlerFunc {
+	var tokenString string
 	return func(context *gin.Context) {
 		authHeader := context.GetHeader("Authorization")
+		authInCookie, err := context.Request.Cookie("Authorization")
+		if err == nil && authInCookie != nil {
+			tokenString = authInCookie.Value
+		} else {
+			context.JSON(http.StatusUnauthorized, gin.H{"error": "No Authorization in cookie"})
+			context.Abort()
+			return
+		}
+		if strings.HasPrefix(tokenString, "Bearer ") {
+			tokenString = tokenString[7:]
+		}
+		claimsFromCookie, err := utils.ParseToken(tokenString)
+		if err != nil {
+			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.Abort()
+			return
+
+		}
+		if claimsFromCookie.ExpiresAt < time.Now().Unix() {
+			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.Abort()
+			return
+		} else {
+			context.Set("username", claimsFromCookie.UserName)
+			context.Set("role", claimsFromCookie.Role)
+			context.Set("user_uuid", claimsFromCookie.UUID)
+			context.Set("ExpiresAt", claimsFromCookie.ExpiresAt)
+			context.Next()
+		}
 		if authHeader == "" {
 			context.JSON(http.StatusUnauthorized, gin.H{"error": "No Authorization header"})
 			context.Abort()
