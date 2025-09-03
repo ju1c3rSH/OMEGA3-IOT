@@ -31,3 +31,37 @@
 	Enum        []string
 	//TODO Required Type ?
 ```
+
+## 4. 设备录入系统流程
+```text
+    设备注册遵循：设备开机通过网络/Lora的方式向主服务器进行报备注册。
+    Lora需要通过网关。
+    用户通过后续设备上显示的RegCode向服务器发送请求，将设备绑定至用户。
+    
+    流程：匿名注册——> 临时UUID和RegCode与VerifyCode，开辟当前UUID的Topic——>RegCode被使用，Topic下发指令，停止重置计时，并在服务端处转为正式UUID，存入数据库
+  
+```
+### 4.1. RegCode规范
+```textmate
+    RegCode应为一串8位的含大小写字母、数字、符号的字符串。
+    在设备注册后由主服务器生成，并下发给设备显示。
+```
+
+### 4.1.2 VerifyCode规范
+```text
+    VerifyCode应为一串16位的含大小写字母、数字、符号的字符串。
+    VerifyHash为其取hash。
+    Verify*是给设备上传数据时鉴权用的。
+```
+
+### 4.2. 设备注册失败超时处理
+```text
+    大概不会弄这种机制吧（）
+    但是可以弄成创建临时注册记录，临时的uuid和ExpireTime。
+    Expire的条件可以是：设备重启（临时的UUID存储在设备的易失性存储，如果Reg成功则转为持久UUID，写入设备的存储）或者到点没有接收到当前临时UUID的Topic的注册成功指令，则清理所有数据。
+```
+
+### 5.服务器与设备的通信
+```text
+    移动网络设备使用MQ，Lora设备使用Lora双向联通。
+```

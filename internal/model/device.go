@@ -21,6 +21,10 @@ type Instance struct {
 	Properties   Properties `gorm:"type:json" json:"properties"`
 	CreatedAt    time.Time  `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt    time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+	VerifyHash   string     `gorm:"type:varchar(255)" json:"verify_hash"`
+	//IsActivated  bool       `gorm:"default:false" json:"is_activated"`不需要，因为有DeviceRegistrationRecord的机制，出现在这个库里的肯定是激活绑定了的
+	SN     string `gorm:"type:varchar(100);null" json:"sn,omitempty"`
+	Remark string `gorm:"type:text" json:"remark,omitempty"`
 }
 
 type DeviceTemplate struct {
@@ -29,6 +33,42 @@ type DeviceTemplate struct {
 	Description string                  `json:"description"`
 	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
 	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
+}
+type DeviceRegistrationRecord struct {
+	// ID 是记录的主键
+	ID uint `gorm:"primaryKey" json:"id"`
+
+	// DeviceUUID 是分配给设备的唯一标识符，用于后续通信和绑定。
+	// 数据库层面有唯一索引 idx_device_uuid 保障其唯一性。
+	DeviceUUID string `gorm:"type:varchar(36);uniqueIndex:idx_device_uuid" json:"device_uuid"`
+
+	// RegCode 是提供给用户用于绑定设备的 8 位随机码。
+	// 数据库层面有唯一索引 idx_reg_code 保障其唯一性。
+	RegCode string `gorm:"type:varchar(8);uniqueIndex:idx_reg_code" json:"reg_code"`
+
+	// DeviceTypeID 关联到 GlobalDeviceTypeManager 中的设备类型 ID。
+	DeviceTypeID int `gorm:"type:int" json:"device_type_id"`
+
+	// SN (Serial Number) 是设备的序列号（如果有的话）。
+	// 可以为 NULL。如果需要唯一性，应在数据库层面通过允许 NULL 的唯一索引来实现。
+	SN string `gorm:"type:varchar(100);null" json:"sn,omitempty"`
+
+	// VerifyHash 是用于设备数据上传鉴权的哈希值（基于 VerifyCode 生成）。
+	VerifyHash string `gorm:"type:varchar(255)" json:"verify_hash"`
+
+	// CreatedAt 记录创建时的 Unix 时间戳。
+	CreatedAt int64 `gorm:"not null" json:"created_at"` // 或使用 time.Time 配合 gorm:"autoCreateTime"
+
+	// ExpiresAt 记录此注册码过期时的 Unix 时间戳。
+	// 添加索引 idx_expires_at 以优化过期记录清理或查询。
+	ExpiresAt int64 `gorm:"index:idx_expires_at" json:"expires_at"`
+
+	// IsBound 标记此注册记录是否已被成功用于绑定设备。
+	// 添加索引 idx_is_bound 以优化查询未绑定的记录。
+	// default:false 确保新记录默认为未绑定。
+	IsBound bool `gorm:"default:false;index:idx_is_bound" json:"is_bound"`
+
+	//以上信息由QWEN3--CODER生成 （这玩意还挺好用）
 }
 
 /*
@@ -46,6 +86,10 @@ type DeviceType struct {
 	Description string                  `mapstructure:"description" yaml:"description"`
 	Properties  map[string]PropertyMeta `mapstructure:"properties" yaml:"properties"`
 }
+
+/*
+↓无用
+*/
 type DeviceAddTemplate struct {
 	Name        string `json:"name" gorm:"primaryKey"`
 	Description string `json:"description"`
@@ -129,8 +173,18 @@ func (dtm *DeviceTypeManager) IsValidType(name string) bool {
 	_, exists := dtm.types[name]
 	return exists
 }
-
-func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType) (*Instance, error) {
+func NewRegistrationRecord(deviceTypeID int, hashedVerifyCode string) (*DeviceRegistrationRecord, error) {
+	return &DeviceRegistrationRecord{
+		DeviceUUID:   utils.GenerateUUID().String(),
+		DeviceTypeID: deviceTypeID,
+		RegCode:      utils.GenerateRegCode(),
+		ExpiresAt:    time.Now().Add(time.Hour * 24).Unix(),
+		CreatedAt:    time.Now().Unix(),
+		VerifyHash:   hashedVerifyCode,
+	}, nil
+}
+func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType, verifyHash string, remark string, deviceUUID string) (*Instance, error) {
+	//TODO这里还不能用，要加上验证Hash
 	props := Properties{Items: make(map[string]*PropertyItem)}
 	for propName, meta := range deviceType.Properties {
 		props.Items[propName] = &PropertyItem{
@@ -140,8 +194,9 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 
 	}
 	return &Instance{
-		InstanceUUID: utils.GenerateUUID().String(),
+		InstanceUUID: deviceUUID,
 		Name:         name,
+		Remark:       remark,
 		Type:         deviceType.Name,
 		Online:       false,
 		OwnerUUID:    ownerUuid,
@@ -149,6 +204,7 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 		AddTime:      time.Now().Unix(),
 		LastSeen:     time.Now().Unix(),
 		Properties:   props,
+		VerifyHash:   verifyHash,
 	}, nil
 
 }

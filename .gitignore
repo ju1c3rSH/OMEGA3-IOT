@@ -1,0 +1,10 @@
+# .gitignore
+
+# Ignore the main configuration file
+GeneralConfig.yaml
+
+# Optionally, ignore any file ending with _config.yaml
+*_config.yaml
+
+# Or ignore a whole config directory
+# config/
