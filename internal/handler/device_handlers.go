@@ -98,12 +98,12 @@ func DeviceRegisterAnonymously(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Device Registered successfully",
 		"device": gin.H{
-			"id":               record.ID,
-			"uuid":             record.DeviceUUID,
-			"reg_code":         record.RegCode,
-			"type":             record.DeviceTypeID,
-			"expires_at":       record.ExpiresAt,
-			"verify_code_hash": record.VerifyHash,
+			"id":          record.ID,
+			"uuid":        record.DeviceUUID,
+			"reg_code":    record.RegCode,
+			"type":        record.DeviceTypeID,
+			"expires_at":  record.ExpiresAt,
+			"verify_code": verifyCode,
 		},
 	})
 }
