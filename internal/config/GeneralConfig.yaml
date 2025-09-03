@@ -1,5 +1,5 @@
 database:
-  dsn: OMEGA3:OMEGA#@tcp(yuyuko.food:55280)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
+  dsn: OMEGA3:OMEGA#@tcp(urhost:55280)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
 
 server:
   port: 8000
