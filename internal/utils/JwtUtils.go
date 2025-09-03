@@ -33,7 +33,8 @@ func GenerateToken(username string, userUUID string, role int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return "Bearer " + tokenString, nil
+	return tokenString, nil
+	//这里改掉Bearer是因为浏览器header会自动加上
 }
 
 // All with bearer

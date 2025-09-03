@@ -10,6 +10,7 @@ import (
 
 func Run() error {
 	r := gin.Default()
+	r.Use(handler.Cors())
 	handler.RegRoutes(r)
 	return r.Run(":1222")
 }

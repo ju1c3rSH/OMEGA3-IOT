@@ -16,9 +16,13 @@ func JwtAuthMiddleWare() gin.HandlerFunc {
 		if err == nil && authInCookie != nil {
 			tokenString = authInCookie.Value
 		} else {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "No Authorization in cookie"})
-			context.Abort()
-			return
+			if authHeader == "" {
+				context.JSON(http.StatusUnauthorized, gin.H{"error": "Neither Nor Authorization in cookie or Authorization header"})
+				context.Abort()
+				return
+			} else {
+				tokenString = authHeader
+			}
 		}
 		if strings.HasPrefix(tokenString, "Bearer ") {
 			tokenString = tokenString[7:]

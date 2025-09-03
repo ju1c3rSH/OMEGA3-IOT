@@ -22,8 +22,8 @@ func (d deviceFactory) CreateInstance(name, deviceType, description, ownerUUID s
 		Type:         deviceType,
 		Description:  description,
 		OwnerUUID:    ownerUUID,
-		AddTime:      int(time.Now().Unix()),
-		LastSeen:     int(time.Now().Unix()),
+		AddTime:      int64(time.Now().Unix()),
+		LastSeen:     int64(time.Now().Unix()),
 		Activated:    false,
 		Properties:   model.InstanceProperties{Items: make(map[string]model.PropertyItem)},
 	}

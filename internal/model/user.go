@@ -13,7 +13,7 @@ type User struct {
 	Online       bool   `json:"online"`
 	Description  string `json:"description,omitempty"`
 	LastSeen     int64  `json:"last_seen"`
-	IP           string `json:"ip" gorm:"size:45"` // 支持IPv6
+	IP           string `json:"ip" gorm:"size:45"`
 	PasswordHash string `json:"password_hash" gorm:"not null"`
 	CreatedAt    int64  `json:"created_at"`
 	UpdatedAt    int64  `json:"updated_at"`
@@ -23,6 +23,12 @@ type User struct {
 type RegUser struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+}
+
+type BindDeviceByRegCode struct {
+	RegCode      string `json:"reg_code"`
+	DeviceNick   string `json:"device_nick"`
+	DeviceRemark string `json:"device_remark"`
 }
 
 type LoginUser struct {
