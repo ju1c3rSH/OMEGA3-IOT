@@ -65,3 +65,52 @@
 ```text
     移动网络设备使用MQ，Lora设备使用Lora双向联通。
 ```
+
+## 5.1. 设备在MQTT中的规范
+```text
+    遵循 tcp:/data/device/{device_uuid}/的规范，其下属有：
+    1.property
+    2.event
+    3.action
+```
+## 5.1.1.  设备在通过MQTT传输Properties数据时的规范
+```text
+    使用json传输属于自己的props数据
+    例：
+```
+```json
+{
+  "verify_code": "your_actual_16_char_verify_code_here",
+  "timestamp": 1756882749,
+  "data": {
+    "properties": {
+      "gps_location": {
+        "meta": {
+          "Writable": false,
+          "Description": "GPS位置",
+          "Format": "string"
+        },
+        "value": "39.9042,116.4074"
+      },
+      "battery_level": {
+        "meta": {
+          "Writable": true,
+          "Description": "电量",
+          "Unit": "%",
+          "Range": [
+            0,
+            100
+          ],
+          "Format": "int"
+        },
+        "value": "85"
+      }
+    }
+  }
+}
+```
+
+## 5.1.2. 解析prop时的规范
+```text
+
+```
