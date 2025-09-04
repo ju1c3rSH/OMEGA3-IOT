@@ -43,7 +43,7 @@ func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode s
 }
 
 func (s *DeviceService) AddDevice(name string, deviceTypeID int, remark string, ownerUUID string) (*model.Instance, error) {
-	// 验证设备类型
+	//验证设备类型
 	//TODO这个不能直接用！！！！
 	deviceType, valid := model.GlobalDeviceTypeManager.GetById(deviceTypeID)
 	if !valid {

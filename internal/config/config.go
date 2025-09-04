@@ -27,7 +27,7 @@ type Broker struct {
 }
 
 func (b Broker) Address() string {
-
+	//TODO修好！
 	return fmt.Sprintf("%s://%s:%d", b.Protocol, b.Host, b.Port)
 }
 

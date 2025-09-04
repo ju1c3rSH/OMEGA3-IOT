@@ -21,9 +21,14 @@ type MQTTService struct {
 }
 
 type DeviceMessage struct {
-	VerifyCode string                 `json:"verify_code"`
-	TimeStamp  int64                  `json:"timestamp"`
-	Data       map[string]interface{} `json:"data"`
+	VerifyCode string `json:"verify_code"`
+	TimeStamp  int64  `json:"timestamp"`
+	Data       Data   `json:"data"`
+}
+
+type Data struct {
+	Properties map[string]model.PropertyItem `json:"properties"`
+	Event      model.Event                   `json:"event"`
 }
 
 func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
@@ -64,68 +69,76 @@ func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
 
 func (m *MQTTService) setupSubscription() {
 	log.Printf("MQTT Service setup subscription")
-	if token := m.broker.Subscribe("data/device/+/property", 1, m.handlePropertyData); token.Wait() && token.Error() != nil {
+	if token := m.broker.Subscribe("data/device/+/properties", 1, m.handlePropertiesData); token.Wait() && token.Error() != nil {
 		log.Fatalf("Failed to subscribe to data topic : %s", token.Error())
 	} else {
 		log.Printf("Successfully subscribed to topic [data/device/+/property]")
 	}
 }
-func (m *MQTTService) handlePropertyData(c mqtt.Client, msg mqtt.Message) {
+func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 	topic := msg.Topic()
 	payload := msg.Payload()
 	log.Printf("Received property data from MQTT topic [%s] (QOS %d): %s", topic, msg.Qos(), string(payload))
 	deviceUUID, _ := extractDeviceUUIDFromTopic(topic)
-	var instance model.Instance
-	dbSession := m.db.Session(&gorm.Session{})
-	if err := dbSession.Where("instance_uuid = ?", deviceUUID).First(&instance).Error; err != nil {
-		if errors.Is(gorm.ErrRecordNotFound, err) {
-			fmt.Errorf("device with uuid %s was not found in the database for: %s", deviceUUID)
-		}
-		_ = fmt.Errorf("device with uuid %s was not found in the database for: %s", deviceUUID, err)
-	}
 	var message DeviceMessage
-	if err := json.Unmarshal(msg.Payload(), &message); err != nil {
+
+	if err := json.Unmarshal(payload, &message); err != nil {
 		fmt.Errorf("error unmarshalling device message: %v", err)
 	}
+
 	hashedVerifyCode := utils.HashVerifyCode(message.VerifyCode)
-	if err := dbSession.Where("verify_hash = ?", hashedVerifyCode).First(&instance).Error; err != nil {
-		fmt.Errorf("device with uuid %s was not found in the database for: %s", deviceUUID, err)
-	}
-	rawPropsData, ok := message.Data["properties"]
-	if !ok {
-		log.Printf("Warning: 'properties' field missing in message data from device %s", deviceUUID)
-	}
+	rawPropsData := message.Data.Properties
+	fmt.Printf("Properties Object: %+v\n", rawPropsData)
 
-	// 类型断言为 map[string]interface{}
-	_, ok = rawPropsData.(map[string]interface{})
-	if !ok {
-		log.Printf("Error: 'properties' field in message data is not a map for device %s", deviceUUID)
-
+	var instance model.Instance
+	dbSession := m.db.Session(&gorm.Session{})
+	if err := dbSession.Where("instance_uuid = ? AND verify_hash = ?", deviceUUID, hashedVerifyCode).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("Unauthorized access attempt: No device found with UUID %s and provided verify code (hash: %s)", deviceUUID, hashedVerifyCode)
+		} else {
+			log.Printf("Database error during authentication for device %s: %v", deviceUUID, err)
+		}
+		return
 	}
 
 	// 确保 instance.Properties.Items 已初始化
 	if instance.Properties.Items == nil {
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
 	}
-	/*
-		if err := m.updateDeviceProperties(instance, message.Data); err != nil {
-		}
 
-	*/
+	if err := m.updateDeviceProperties(instance, rawPropsData); err != nil {
+
+	}
 
 }
-func (m *MQTTService) updateDeviceProperties(instance model.Instance, data map[string]interface{}) error {
+func (m *MQTTService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
 
 	if instance.Properties.Items == nil {
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
-
 	}
+	for key, value := range data {
+		//1创建一个新的 PropertyItem 指针，并复制值
+		//不担心复用，可以直接取地址 &value，但要注意循环变量作用域问题
+		//更安全的方式是创建副本：
+		valueCopy := value
+		va := valueCopy.Value
+		instance.Properties.Items[key].Value = va
+	}
+	instance.LastSeen = time.Now().Unix()
+	instance.UpdatedAt = time.Now()
+	instance.Online = true
+	dbSession := m.db.Session(&gorm.Session{})
+	if err := dbSession.Save(instance).Error; err != nil {
+		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
+	}
+
+	log.Printf("Database record for device %s updated with new properties.", instance.InstanceUUID)
 	return nil
 }
 func extractDeviceUUIDFromTopic(topic string) (string, error) {
 	// 简单的字符串分割方法
 	parts := strings.Split(topic, "/")
-	if len(parts) >= 4 && parts[0] == "data" && parts[1] == "device" && parts[3] == "property" {
+	if len(parts) >= 4 && parts[0] == "data" && parts[1] == "device" && parts[3] == "properties" {
 		return parts[2], nil
 	}
 

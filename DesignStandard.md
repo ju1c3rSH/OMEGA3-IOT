@@ -39,7 +39,9 @@
     用户通过后续设备上显示的RegCode向服务器发送请求，将设备绑定至用户。
     
     流程：匿名注册——> 临时UUID和RegCode与VerifyCode，开辟当前UUID的Topic——>RegCode被使用，Topic下发指令，停止重置计时，并在服务端处转为正式UUID，存入数据库
-  
+    在存入instance表之后，服务端在broker发布一条广播：
+    /data/device/{Device_UUID}/action 其含有GO_ON的信息，设备会在此前订阅这里，接收到之后开始工作。
+    
 ```
 ### 4.1. RegCode规范
 ```textmate
@@ -69,7 +71,7 @@
 ## 5.1. 设备在MQTT中的规范
 ```text
     遵循 tcp:/data/device/{device_uuid}/的规范，其下属有：
-    1.property
+    1.properties
     2.event
     3.action
 ```
@@ -114,3 +116,66 @@
 ```text
 
 ```
+
+## 5.2.  HeartBeat检测online的方法
+
+
+
+### 6.1.  CT01模块的使用
+```text
+    上电后执行命令顺序：
+```
+
+```text
+    # 1. 配置 APN (使用默认)
+AT+QICSGP=1,1,"","",""
+# 模块应返回: OK
+
+# 2. 设置客户端 ID (务必唯一)
+AT+MQTTCLIENT="DXCT01_Test_Client_001"
+# 模块应返回: OK
+
+# 3. 配置服务器信息
+AT+MIPSTART="yuyuko.food",1883,4
+# 模块应返回: OK
+# 然后可能返回: +MIPSTART:SUCCESS (表示配置成功)
+
+# 4. 连接服务器
+AT+MCONNECT=1,60
+# 模块应返回: OK
+# 然后可能返回: +MCONNECT:SUCCESS (表示连接成功)
+
+# 5. 订阅主题
+AT+MSUB="test/from_server",0
+# 模块应返回: OK
+
+# 6. 发布消息
+#AT+MPUBEX="data/device/3eae4aed-5d6e-44f7-b59c-7ec6b6c43bc1/properties",1,0,268
+#要发送的（其中268是字符数）
+{
+  "verify_code": "D8SGbdW}^:21.y12",
+  "timestamp": 1756882749,
+  "data": {
+    "properties": {
+      "gps_location": {
+        
+        "value": "39.9042,116.4074"
+      },
+      "battery_level": {
+        
+        "value": "66"
+      }
+    }
+  }
+}
+# 7. (等待) 接收消息 (如果其他客户端向 test/from_server 发布了消息)
+收←◆OK
+
++MPUBEX: SUCCESS
+
+# 8. 断开连接
+AT+MDISCONNECT
+# 模块应返回: OK
+```
+
+## 6.2. 设备
