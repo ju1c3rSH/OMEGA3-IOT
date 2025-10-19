@@ -63,9 +63,55 @@
     Expire的条件可以是：设备重启（临时的UUID存储在设备的易失性存储，如果Reg成功则转为持久UUID，写入设备的存储）或者到点没有接收到当前临时UUID的Topic的注册成功指令，则清理所有数据。
 ```
 
+
+### 4.2.1 设备初步注册时的响应规范
+
+
+## 响应结构
+```json
+{
+  "code": 200,
+  "device": {
+    "expires_at": 1760858932,
+    "id": 154,
+    "reg_code": "A0WU@HG6",
+    "type": 1,
+    "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
+    "verify_code": "tOFX*mc8=V}?Cnh2"
+  },
+  "message": "Device Registered successfully"
+}
+```
+## 字段说明
+
+### 根级字段
+- code (int): 状态码，200 表示成功
+  - message (string): 人类可读的成功/错误信息
+  - device (object): 设备注册详情对象
+
+### device 对象字段
+- id (int):
+  设备在数据库中的唯一数字 ID
+  - uuid (string):
+    设备全局唯一标识符（UUID v4 格式）
+  - reg_code (string):
+    8 位注册码，由大小写字母、数字、符号组成，用于用户绑定设备
+  - verify_code (string):
+    16 位校验码，由大小写字母、数字、符号组成，用于设备上传数据时的身份验证
+  - type (int):
+    设备类型 ID（1 = 基础测试用定位器）
+  - expires_at (int):
+    凭证过期时间（Unix 时间戳，秒级），示例值 1760858932 对应 UTC 时间 2025-10-18 15:28:52
+
+## 安全与使用提示
+- verify_code 包含特殊字符（如 *, =, ?, }），必须原样存储和传输
+  - reg_code 仅用于初始绑定，绑定成功后失效
+  - expires_at 为临时凭证有效期，正式设备记录无过期时间
+  - 所有字符串字段均区分大小写
 ### 5.服务器与设备的通信
 ```text
     移动网络设备使用MQ，Lora设备使用Lora双向联通。
+
 ```
 
 ## 5.1. 设备在MQTT中的规范

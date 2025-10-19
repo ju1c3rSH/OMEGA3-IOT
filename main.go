@@ -1,7 +1,7 @@
 package main
 
 import (
-	"OMEGA3-IOT/cmd/http-api"
+	http_api "OMEGA3-IOT/cmd/http-api"
 	"OMEGA3-IOT/internal/config"
 	"OMEGA3-IOT/internal/db"
 	"OMEGA3-IOT/internal/model"
@@ -28,19 +28,6 @@ func main() {
 
 	log.Println("Device types loaded successfully")
 	db.InitDB(cfg)
-	//brokerURL := cfg.MQTT.Broker.Address()
-	brokerURL := "tcp://yuyuko.food:1883"
-	globalMQTTService, err := service.NewMQTTService(brokerURL, db.DB)
-	if err != nil {
-		log.Fatalf("Failed to initialize MQTT service: %v", err)
-	}
-	// 确保程序退出时断开 MQTT 连接
-	defer func() {
-		if globalMQTTService != nil {
-			globalMQTTService.Disconnect(250) // 250ms 是断开前等待的时间
-			log.Println("MQTT Service disconnected on exit.")
-		}
-	}()
 	httpApiErr := http_api.Run()
 	if httpApiErr != nil {
 		log.Panicf("Error loading config: %v", httpApiErr)
@@ -50,4 +37,18 @@ func main() {
 		// for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.</p>
 		fmt.Println("i =", 100/i)
 	}
+	//brokerURL := cfg.MQTT.Broker.Address()
+	brokerURL := "tcp://yuyuko.food:1883"
+	globalMQTTService, err := service.NewMQTTService(brokerURL, db.DB)
+	if err != nil {
+		log.Fatalf("Failed to initialize MQTT service: %v", err)
+	}
+
+	// 确保程序退出时断开 MQTT 连接
+	defer func() {
+		if globalMQTTService != nil {
+			globalMQTTService.Disconnect(250) // 250ms 是断开前等待的时间
+			log.Println("MQTT Service disconnected on exit.")
+		}
+	}()
 }
