@@ -67,7 +67,7 @@ func DeviceRegisterAnonymously(c *gin.Context) {
 		DeviceTypeID int `form:"device_type_id" binding:"required"`
 	}
 
-	if err := c.ShouldBindQuery(&input); err != nil {
+	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing query parameter", "details": err.Error()})
 		return
 	}
@@ -96,6 +96,7 @@ func DeviceRegisterAnonymously(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"code":    http.StatusOK,
 		"message": "Device Registered successfully",
 		"device": gin.H{
 			"id":          record.ID,
