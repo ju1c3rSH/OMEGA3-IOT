@@ -7,13 +7,16 @@ import (
 	"context"
 	"fmt"
 	"gorm.io/gorm"
+	"log"
 	"time"
 )
 
-type UserService struct{}
+type UserService struct {
+	mqttSvc *MQTTService
+}
 
-func NewUserService() *UserService {
-	return &UserService{}
+func NewUserService(mqttSvc *MQTTService) *UserService {
+	return &UserService{mqttSvc: mqttSvc}
 }
 
 func (s *UserService) Register(username, password string, ip string) (*model.User, error) {
@@ -111,6 +114,7 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		}
 		return nil, err
 	}
+
 	if err := db.DB.Model(&model.DeviceRegistrationRecord{}).Where("device_uuid = ?", record.DeviceUUID).Update("is_bound", true).Error; err != nil {
 		// 如果更新 IsBound 失败，记录警告日志。
 		// Instance 已创建成功，但记录状态不一致。
@@ -121,6 +125,17 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		// 注意：如果更新 IsBound 失败是一个严重问题，
 		// 你可能需要考虑回滚 Instance 的创建（这通常很复杂，需要事务或补偿操作）。
 		// 但在大多数情况下，标记失败比删除已成功创建的实例更安全。
+	}
+	actionPayload := map[string]interface{}{
+		"command":   "enable_properties_upload",
+		"timestamp": time.Now().Unix(),
+		"params": map[string]interface{}{
+			"interval_sec": 30,
+		},
+	}
+	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", actionPayload); err != nil {
+		log.Printf("Warning: Failed to send enable_properties_upload action to device %s: %v", instance.InstanceUUID, err)
+		//TODO 这里可以加上一个 Retry Pool..
 	}
 	return instance, nil
 	//should return a instance obj

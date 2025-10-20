@@ -21,7 +21,7 @@ func AddDevice(c *gin.Context) {
 		DeviceType  int    `form:"device_type" binding:"required"`
 		Description string `form:"description,omitempty"`
 	}
-	if err := c.ShouldBindQuery(&input); err != nil {
+	if err := c.ShouldBind(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

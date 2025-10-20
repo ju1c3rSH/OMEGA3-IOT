@@ -13,7 +13,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run() error {
+func Run(userHandler *handler.UserHandler) error {
 	r := gin.Default()
 
 	// 正确配置 CORS（生产环境应限制 AllowOrigins）
@@ -23,7 +23,7 @@ func Run() error {
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r)
+	handler.RegRoutes(r, userHandler)
 
 	log.Println("Starting server on :27015")
 	return r.Run(":27015")

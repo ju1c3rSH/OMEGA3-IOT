@@ -2,6 +2,7 @@ package handler
 
 import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -31,7 +32,7 @@ func Cors() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func RegRoutes(router *gin.Engine) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler) {
 	apiGroup := router.Group("/api/v1")
 
 	apiGroup.GET("/GetTest", func(c *gin.Context) {
@@ -44,15 +45,15 @@ func RegRoutes(router *gin.Engine) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	apiGroup.POST("Register", Register)
+	apiGroup.POST("Register", userHandler.Register)
 
-	apiGroup.POST("/Login", Login)
+	apiGroup.POST("/Login", userHandler.Login)
 	apiGroup.POST("/DeviceReg", DeviceRegisterAnonymously)
 	protected := apiGroup.Group("")
 	protected.Use(MiddleWares.JwtAuthMiddleWare())
 	{
-		protected.GET("/GetUserInfo", GetUserInfo)
+		protected.GET("/GetUserInfo", userHandler.GetUserInfo)
 		protected.POST("/AddDevice", AddDevice)
-		protected.POST("/BindDeviceByRegCode", BindDeviceByRegCode)
+		protected.POST("/BindDeviceByRegCode", userHandler.BindDeviceByRegCode)
 	}
 }

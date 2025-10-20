@@ -157,7 +157,10 @@
   }
 }
 ```
-
+### 5.1.1.1. DX-CT01接收到MQTT数据时
+````text
+  +MSUB:"phone123",9bytes,"123ssssss"
+````
 ## 5.1.2. 解析prop时的规范
 ```text
 
@@ -165,6 +168,20 @@
 
 ## 5.2.  HeartBeat检测online的方法
 
+## 5.1.3.  服务器在通过MQTT下发Action时的规范
+```text
+  topic: data/device/{device_uuid}/action
+  ```
+payload:
+```json
+{
+  "command": "enable_properties_upload",
+  "params": {
+    "interval_sec": 30
+  },
+  "timestamp": 1729450800
+}
+```
 
 
 ### 6.1.  CT01模块的使用
