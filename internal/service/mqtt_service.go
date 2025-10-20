@@ -29,6 +29,10 @@ type DeviceMessage struct {
 type Data struct {
 	Properties map[string]model.PropertyItem `json:"properties"`
 	Event      model.Event                   `json:"event"`
+	Action     model.Action                  `json:"action"`
+}
+type Publisher interface {
+	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
 }
 
 func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
@@ -66,7 +70,20 @@ func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
 	service.setupSubscription()
 	return service, nil
 }
-
+func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName string, payload interface{}) error {
+	topic := fmt.Sprintf("data/device/%s/action", deviceUUID)
+	payloadBytes, err := json.Marshal(payload)
+	//TODO 解耦
+	if err != nil {
+		return fmt.Errorf("failed to marshal action payload: %w", err)
+	}
+	token := m.broker.Publish(topic, 1, false, payloadBytes)
+	if token.Wait() && token.Error() != nil {
+		return fmt.Errorf("Failed to publish action payload: %v", token.Error())
+	}
+	log.Printf("MQTT Service published action payload: %v to %v", string(payloadBytes), topic)
+	return nil
+}
 func (m *MQTTService) setupSubscription() {
 	log.Printf("MQTT Service setup subscription")
 	if token := m.broker.Subscribe("data/device/+/properties", 1, m.handlePropertiesData); token.Wait() && token.Error() != nil {
