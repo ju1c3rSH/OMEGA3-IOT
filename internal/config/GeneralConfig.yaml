@@ -1,5 +1,20 @@
 database:
-  dsn: OMEGA3:OMEGA#@tcp(yuyuko.food:55280)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
+  mysqldsn: OMEGA3:OMEGA#@tcp(yuyuko.food:55280)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
+
 
 server:
-  port: 8000
+  port: 27015
+
+IoTDB:
+  host: "yuyuko.food"
+  port: 18926
+  username: root
+  password: root
+  queryTimeoutMs: 4000
+  pool:
+
+    maxConnections: 5
+    timeout: 60000
+    fetchMetadataAuto: false
+
+

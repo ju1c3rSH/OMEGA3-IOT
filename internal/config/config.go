@@ -8,7 +8,7 @@ import (
 
 type Config struct {
 	Database struct {
-		DSN string `mapstructure:"dsn"`
+		MYSQLDSN string `mapstructure:"mysqldsn"`
 	} `mapstructure:"database"`
 	Server struct {
 		Port string `mapstructure:"port"`
@@ -18,12 +18,25 @@ type Config struct {
 		Client Client `mapstructure:"client"`
 		// TLS    TLS    `mapstructure:"tls"` // 如果需要 TLS
 	}
+	IoTDB struct {
+		Host           string `mapstructure:"host"`
+		Port           string `mapstructure:"port"`
+		UserName       string `mapstructure:"username"`
+		Password       string `mapstructure:"password"`
+		QueryTimeoutMs int64  `mapstructure:"queryTimeoutMs"`
+		Pool           Pool   `mapstructure:"pool"`
+	}
 }
 
 type Broker struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	Protocol string `mapstructure:"protocol"` // e.g., "tcp", "ssl"
+}
+type Pool struct {
+	MaxConnections    int   `mapstructure:"maxConnections"`
+	TimeOut           int64 `mapstructure:"timeout"`
+	FetchMetadataAuto bool  `mapstructure:"fetchMetadataAuto"`
 }
 
 func (b Broker) Address() string {
@@ -73,12 +86,10 @@ func LoadConfig(path string) (config Config, err error) {
 		} `mapstructure:"mqtt"`
 	}
 
-	// 反序列化 MQTT 配置部分到临时结构
 	if err := MQTTConfig.Unmarshal(&mqttConfigPart); err != nil {
 		return config, fmt.Errorf("error unmarshalling MQTT config: %w", err)
 	}
 
-	// 将加载的 MQTT 部分赋值给主配置结构
 	config.MQTT = mqttConfigPart.MQTT
 
 	if err := MQTTConfig.ReadInConfig(); err != nil {

@@ -6,22 +6,29 @@ import (
 	"OMEGA3-IOT/internal/utils"
 	"context"
 	"fmt"
+	"github.com/apache/iotdb-client-go/client"
 	"gorm.io/gorm"
 	"log"
 	"time"
 )
 
 type UserService struct {
-	mqttSvc *MQTTService
+	mqttSvc     *MQTTService
+	mysqlDB     *gorm.DB
+	iotDBClient *db.IOTDBClient
 }
 
-func NewUserService(mqttSvc *MQTTService) *UserService {
-	return &UserService{mqttSvc: mqttSvc}
+func NewUserService(mqttSvc *MQTTService, mysqlDB *gorm.DB, iotDBClient *db.IOTDBClient) *UserService {
+	return &UserService{
+		mqttSvc:     mqttSvc,
+		mysqlDB:     mysqlDB,
+		iotDBClient: iotDBClient,
+	}
 }
 
 func (s *UserService) Register(username, password string, ip string) (*model.User, error) {
 	var existingUser model.User
-	if err := db.DB.Where("user_name = ?", username).First(&existingUser).Error; err == nil {
+	if err := s.mysqlDB.Where("user_name = ?", username).First(&existingUser).Error; err == nil {
 		return nil, gorm.ErrDuplicatedKey
 	}
 
@@ -42,7 +49,7 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 		UserUUID:     utils.GenerateUUID().String(),
 	}
 
-	if err := db.DB.Create(user).Error; err != nil {
+	if err := s.mysqlDB.Create(user).Error; err != nil {
 		return nil, err
 	}
 
@@ -51,7 +58,7 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 
 func (s *UserService) Login(username, password string, clientIP string) (string, *model.User, error) {
 	var user model.User
-	if err := db.DB.Where("user_name = ?", username).First(&user).Error; err != nil {
+	if err := s.mysqlDB.Where("user_name = ?", username).First(&user).Error; err != nil {
 		return "", nil, gorm.ErrRecordNotFound
 	}
 
@@ -64,7 +71,7 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 		return "", nil, err
 	}
 
-	db.DB.Model(&user).Updates(map[string]interface{}{
+	s.mysqlDB.Model(&user).Updates(map[string]interface{}{
 		"last_seen": time.Now().Unix(),
 		"ip":        clientIP,
 	})
@@ -74,7 +81,7 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 
 func (s *UserService) GetUserInfoByID(userID uint) (*model.User, error) {
 	var user model.User
-	if err := db.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+	if err := s.mysqlDB.Where("id = ?", userID).First(&user).Error; err != nil {
 		return nil, err
 	}
 	return &user, nil
@@ -82,16 +89,16 @@ func (s *UserService) GetUserInfoByID(userID uint) (*model.User, error) {
 
 func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, deviceNick string, deviceRemark string) (*model.Instance, error) {
 	var record model.DeviceRegistrationRecord
-	if err := db.DB.Where("reg_code = ? AND expires_at > ? AND is_bound = ?", regCode, time.Now().Unix(), false).First(&record).Error; err != nil {
+	if err := s.mysqlDB.Where("reg_code = ? AND expires_at > ? AND is_bound = ?", regCode, time.Now().Unix(), false).First(&record).Error; err != nil {
 		fmt.Errorf("invalid or expired or used registration code: %w ,called up by user %w", err, userUUID)
-		return nil, fmt.Errorf("invalid, expired, or already used registration code") // 使用 wrap 保留原始错误信息
+		return nil, fmt.Errorf("invalid or expired or used registration code: %w ,called up by user %w", err, userUUID) // 使用 wrap 保留原始错误信息
 	}
 	deviceType, exists := model.GlobalDeviceTypeManager.GetById(record.DeviceTypeID)
 	if !exists {
 		// 理论上初始化时加载了类型，这里找不到可能意味着数据不一致或类型被移除
 		// 记录日志或返回特定错误
 		// 删除无效的记录
-		db.DB.Delete(&record)
+		s.mysqlDB.Delete(&record)
 		return nil, fmt.Errorf("associated device type (ID: %d) not found", record.DeviceTypeID)
 	}
 	name := deviceNick
@@ -107,7 +114,7 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := db.DB.WithContext(ctx).Create(instance).Error; err != nil {
+	if err := s.mysqlDB.WithContext(ctx).Create(instance).Error; err != nil {
 		// 判断是否为唯一键冲突（如设备名重复）
 		if err != nil && len(err.Error()) > 0 && (err.Error() == "UNIQUE constraint failed" || err.Error() == "duplicate key value violates unique constraint") {
 			return nil, gorm.ErrDuplicatedKey
@@ -115,7 +122,7 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		return nil, err
 	}
 
-	if err := db.DB.Model(&model.DeviceRegistrationRecord{}).Where("device_uuid = ?", record.DeviceUUID).Update("is_bound", true).Error; err != nil {
+	if err := s.mysqlDB.Model(&model.DeviceRegistrationRecord{}).Where("device_uuid = ?", record.DeviceUUID).Update("is_bound", true).Error; err != nil {
 		// 如果更新 IsBound 失败，记录警告日志。
 		// Instance 已创建成功，但记录状态不一致。
 		// 这种情况应被监控，因为它可能导致后续问题（例如，如果清理任务依赖 IsBound）。
@@ -133,10 +140,63 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 			"interval_sec": 30,
 		},
 	}
+	//TODO 将user_service通过事件驱动等的方式和mqtt_service解耦。
 	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", actionPayload); err != nil {
 		log.Printf("Warning: Failed to send enable_properties_upload action to device %s: %v", instance.InstanceUUID, err)
 		//TODO 这里可以加上一个 Retry Pool..
 	}
 	return instance, nil
 	//should return a instance obj
+}
+
+func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) error {
+	session, err := s.iotDBClient.SessionPool.GetSession()
+	if err != nil {
+		return fmt.Errorf("[DeviceService] failed to get session: %w", err)
+	}
+	defer s.iotDBClient.SessionPool.PutBack(session)
+
+	for _, meta := range instance.Properties.Items {
+		dataType, encoding, compression := s.mapConvertToIotDBType(meta.Meta)
+
+		historicalPath := fmt.Sprintf("root.mm1.device_data.%s.%s", instance.InstanceUUID, meta.Meta.Description)
+
+		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%s, ENCODING=%s, COMPRESSION=%s", historicalPath, dataType, encoding, compression)
+		status, err := s.iotDBClient.ExecuteNonQuery(sql)
+		if checkErr := s.iotDBClient.CheckError(status, err); err != nil {
+			return fmt.Errorf("[UserService] failed to create timeseries %s: %w,for %s", meta.Meta.Description, err, checkErr)
+		}
+
+	}
+	return nil
+}
+
+func (s *UserService) mapConvertToIotDBType(meta model.PropertyMeta) (dataType client.TSDataType, encoding client.TSEncoding, compression client.TSCompressionType) {
+	switch meta.Format {
+	case "int", "integer":
+		dataType = client.INT32
+		encoding = client.RLE
+	case "long":
+		dataType = client.INT64
+		encoding = client.RLE
+	case "float":
+		dataType = client.FLOAT
+		encoding = client.GORILLA
+	case "double":
+		dataType = client.DOUBLE
+		encoding = client.GORILLA
+	case "string", "text":
+		dataType = client.STRING
+		encoding = client.PLAIN
+	case "boolean":
+		dataType = client.BOOLEAN
+		encoding = client.RLE
+	default:
+		// 默认使用string
+		dataType = client.STRING
+		encoding = client.PLAIN
+	}
+	compression = client.SNAPPY //默认压缩
+	return
+
 }
