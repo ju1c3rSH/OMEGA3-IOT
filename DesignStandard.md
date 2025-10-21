@@ -238,4 +238,28 @@ AT+MDISCONNECT
 ## 6.2. 设备
 ```text
 ```
+
+## 7. 数据库
+
+### 7.1.1 IotDB拓扑图
+
+```
+root (根节点)
+├── mm1 (Storage Group 1)
+│   ├── device_data (逻辑容器)
+│   │   ├── 7b64cea8-ed24-4e73-b0a9-2af503bd4e69 (Device ID)
+│   │   │   ├── gps_location (Timeseries)
+│   │   │   └── battery_level (Timeseries)
+│   │   └── 8c75dfb9-fe35-4f84-a1b0-3c5d6e7f8g9h (Device ID)
+│   │       ├── temperature (Timeseries)
+│   │       └── humidity (Timeseries)
+│   └── device_latest (逻辑容器)
+│       ├── 7b64cea8-ed24-4e73-b0a9-2af503bd4e69 (Device ID)
+│       │   ├── gps_location (Timeseries)
+│       │   └── battery_level (Timeseries)
+│       └── 8c75dfb9-fe35-4f84-a1b0-3c5d6e7f8g9h (Device ID)
+│           ├── temperature (Timeseries)
+│           └── humidity (Timeseries)
+└── mm2 (Storage Group 2 - 可能用于其他用途)
+└── ...
 ```

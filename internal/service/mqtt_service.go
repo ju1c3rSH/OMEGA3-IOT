@@ -15,9 +15,9 @@ import (
 )
 
 type MQTTService struct {
-	broker    mqtt.Client
-	db        *gorm.DB
-	deviceSvc *DeviceService
+	broker        mqtt.Client
+	db            *gorm.DB
+	deviceService *DeviceService
 }
 
 type DeviceMessage struct {
@@ -35,7 +35,7 @@ type Publisher interface {
 	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
 }
 
-func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
+func NewMQTTService(brokerURL string, deviceService *DeviceService) (*MQTTService, error) {
 	options := mqtt.NewClientOptions()
 	options.AddBroker(brokerURL)
 
@@ -61,11 +61,10 @@ func NewMQTTService(brokerURL string, db *gorm.DB) (*MQTTService, error) {
 	}
 	log.Printf("MQTT Service connected to broker: %s successfully", brokerURL)
 
-	deviceSvc := NewDeviceService()
+	//deviceSvc := NewDeviceService()
 	service := &MQTTService{
-		broker:    client,
-		db:        db,
-		deviceSvc: deviceSvc,
+		broker:        client,
+		deviceService: deviceService,
 	}
 	service.setupSubscription()
 	return service, nil
@@ -108,7 +107,7 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 	fmt.Printf("Properties Object: %+v\n", rawPropsData)
 
 	var instance model.Instance
-	dbSession := m.db.Session(&gorm.Session{})
+	dbSession := m.deviceService.mysqlDB.Session(&gorm.Session{})
 	if err := dbSession.Where("instance_uuid = ? AND verify_hash = ?", deviceUUID, hashedVerifyCode).First(&instance).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("Unauthorized access attempt: No device found with UUID %s and provided verify code (hash: %s)", deviceUUID, hashedVerifyCode)
@@ -123,35 +122,11 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
 	}
 
-	if err := m.updateDeviceProperties(instance, rawPropsData); err != nil {
+	if err := m.deviceService.updateDeviceProperties(instance, rawPropsData); err != nil {
 
 	}
-
 }
-func (m *MQTTService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
 
-	if instance.Properties.Items == nil {
-		instance.Properties.Items = make(map[string]*model.PropertyItem)
-	}
-	for key, value := range data {
-		//1创建一个新的 PropertyItem 指针，并复制值
-		//不担心复用，可以直接取地址 &value，但要注意循环变量作用域问题
-		//更安全的方式是创建副本：
-		valueCopy := value
-		va := valueCopy.Value
-		instance.Properties.Items[key].Value = va
-	}
-	instance.LastSeen = time.Now().Unix()
-	instance.UpdatedAt = time.Now()
-	instance.Online = true
-	dbSession := m.db.Session(&gorm.Session{})
-	if err := dbSession.Save(instance).Error; err != nil {
-		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
-	}
-
-	log.Printf("Database record for device %s updated with new properties.", instance.InstanceUUID)
-	return nil
-}
 func extractDeviceUUIDFromTopic(topic string) (string, error) {
 	// 简单的字符串分割方法
 	parts := strings.Split(topic, "/")

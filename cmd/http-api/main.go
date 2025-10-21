@@ -1,7 +1,9 @@
 package http_api
 
 import (
+	"OMEGA3-IOT/internal/config"
 	"OMEGA3-IOT/internal/handler"
+	"OMEGA3-IOT/internal/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -13,7 +15,9 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(userHandler *handler.UserHandler) error {
+func Run(userHandler *handler.UserHandler, config config.Config, deviceService *service.DeviceService) error {
+	log.Println("[HTTP_API] Run function called")
+
 	r := gin.Default()
 
 	// 正确配置 CORS（生产环境应限制 AllowOrigins）
@@ -23,8 +27,8 @@ func Run(userHandler *handler.UserHandler) error {
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler)
+	handler.RegRoutes(r, userHandler, deviceService)
 
-	log.Println("Starting server on :27015")
-	return r.Run(":27015")
+	log.Println("Starting server on :" + config.Server.Port)
+	return r.Run(":" + config.Server.Port)
 }

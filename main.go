@@ -8,13 +8,15 @@ import (
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/service"
 	"fmt"
+
 	"log"
 )
 
 // TIP <p>To run your code, right-click the code and select <b>Run</b>.</p> <p>Alternatively, click
 // the <icon src="AllIcons.Actions.Execute"/> icon in the gutter and select the <b>Run</b> menu item from here.</p>
 
-//var globalMQTTService *service.MQTTService // 全局 MQTT 服务变量 不用了 用依赖注入
+// var globalMQTTService *service.MQTTService // 全局 MQTT 服务变量 不用了 用依赖注入
+var iotdbClient *db.IOTDBClient
 
 var userService *service.UserService
 
@@ -29,26 +31,43 @@ func main() {
 		log.Fatalf("Failed to load device types: %v", err)
 	}
 
-	log.Println("Device types loaded successfully")
+	if cfg.Server.Port == "" {
+		log.Fatalf("[Main] Server port not configured in config file")
+	}
+
+	log.Println("[Main] Device types loaded successfully")
 	db.InitDB(cfg)
-
-	//brokerURL := cfg.MQTT.Broker.Address()
-	brokerURL := "tcp://yuyuko.food:1883"
-	globalMQTTService, err := service.NewMQTTService(brokerURL, db.DB)
+	//iotdbClient, _ = db.NewIotDBFromConfig(cfg)
+	iotdbClient, err := db.NewIotDBFromConfig(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize MQTT service: %v", err)
+		log.Fatalf("[Main] Failed to create IoTDB client: %v", err)
 	}
-	userService = service.NewUserService(globalMQTTService)
-	userHandler := handler.NewUserHandler(userService)
-	httpApiErr := http_api.Run(userHandler)
-	if httpApiErr != nil {
-		log.Panicf("Error loading config: %v", httpApiErr)
+	if err := iotdbClient.InitializeSchema(); err != nil {
+		log.Fatalf("[Main] Failed to initialize IoTDB schema: %v", err)
 	}
+	defer iotdbClient.Close()
 
-	defer func() {
-		if globalMQTTService != nil {
-			globalMQTTService.Disconnect(250) // 250ms 是断开前等待的时间
-			log.Println("MQTT Service disconnected on exit.")
-		}
-	}()
+	deviceService := service.NewDeviceService(db.DB, iotdbClient)
+
+	brokerURL := "tcp://yuyuko.food:1883"
+	mqttService, err := service.NewMQTTService(brokerURL, deviceService)
+	if err != nil {
+		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
+	}
+	defer mqttService.Disconnect(250)
+
+	log.Println("[Main] Before creating UserService")
+	userService = service.NewUserService(mqttService, db.DB, iotdbClient)
+	log.Println("[Main] UserService created")
+	log.Println("[Main] Before creating UserHandler")
+	userHandler := handler.NewUserHandler(userService)
+	log.Println("[Main] UserHandler created")
+
+	log.Println("[Main] Before calling http_api.Run")
+	httpApiErr := http_api.Run(userHandler, cfg, deviceService)
+	log.Println("[Main] After calling http_api.Run")
+
+	if httpApiErr != nil {
+		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
+	}
 }

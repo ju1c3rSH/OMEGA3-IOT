@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"math/big"
+	"strings"
 )
 
 const (
@@ -16,6 +17,14 @@ const (
 )
 
 func GenerateUUID() uuid.UUID { return uuid.New() }
+
+func ConvertHyphenIntoDash(str string) string {
+	return strings.ReplaceAll(str, "-", "_")
+}
+
+func ConvertDashIntoHyphen(str string) string {
+	return strings.ReplaceAll(str, "_", "-")
+}
 
 func GenerateRegCode() string {
 
