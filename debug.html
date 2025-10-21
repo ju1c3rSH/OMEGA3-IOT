@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMEGA3-IOT API 测试页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        h2 { color: #333; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, textarea, button, select { width: 100%; padding: 8px; box-sizing: border-box; }
+        button { background-color: #007cba; color: white; border: none; cursor: pointer; margin-top: 10px; }
+        button:hover { background-color: #005a87; }
+        .result { margin-top: 20px; padding: 10px; border: 1px solid #ddd; background-color: #f9f9f9; white-space: pre-wrap; max-height: 300px; overflow-y: auto; }
+        .section { margin-bottom: 30px; }
+        .token-display { font-weight: bold; color: #007cba; word-break: break-all; }
+    </style>
+</head>
+<body>
+
+<div class="container section">
+    <h2>配置</h2>
+    <div class="form-group">
+        <label for="base_url">API Base URL:</label>
+        <input type="text" id="base_url" value="http://localhost:1234/api/v1" placeholder="例如: http://localhost:1234/api/v1">
+    </div>
+</div>
+
+<div class="container section">
+    <h2>1. 用户注册</h2>
+    <div class="form-group">
+        <label for="reg_username">用户名:</label>
+        <input type="text" id="reg_username" placeholder="输入用户名">
+    </div>
+    <div class="form-group">
+        <label for="reg_password">密码:</label>
+        <input type="password" id="reg_password" placeholder="输入密码">
+    </div>
+    <button onclick="registerUser()">注册</button>
+</div>
+
+<div class="container section">
+    <h2>2. 用户登录</h2>
+    <div class="form-group">
+        <label for="login_username">用户名:</label>
+        <input type="text" id="login_username" placeholder="输入用户名">
+    </div>
+    <div class="form-group">
+        <label for="login_password">密码:</label>
+        <input type="password" id="login_password" placeholder="输入密码">
+    </div>
+    <button onclick="loginUser()">登录</button>
+    <div class="form-group">
+        <label>Access Token:</label>
+        <div id="token_display" class="token-display">请先登录</div>
+    </div>
+</div>
+
+<div class="container section">
+    <h2>3. 匿名设备注册 (获取 RegCode)</h2>
+    <div class="form-group">
+        <label for="device_type_id">Device Type ID:</label>
+        <input type="number" id="device_type_id" value="1" placeholder="输入设备类型ID">
+    </div>
+    <button onclick="registerDeviceAnonymously()">匿名注册设备</button>
+    <div class="form-group">
+        <label>Reg Code (用于绑定):</label>
+        <div id="reg_code_display" class="token-display">-</div>
+    </div>
+</div>
+
+<div class="container section">
+    <h2>4. 使用 RegCode 绑定设备</h2>
+    <div class="form-group">
+        <label for="bind_reg_code">Reg Code:</label>
+        <input type="text" id="bind_reg_code" placeholder="输入 Reg Code">
+    </div>
+    <div class="form-group">
+        <label for="bind_device_nick">设备昵称 (可选):</label>
+        <input type="text" id="bind_device_nick" placeholder="输入设备昵称">
+    </div>
+    <div class="form-group">
+        <label for="bind_device_remark">设备备注 (可选):</label>
+        <input type="text" id="bind_device_remark" placeholder="输入设备备注">
+    </div>
+    <button onclick="bindDeviceByRegCode()">绑定设备</button>
+</div>
+
+<div class="container">
+    <h2>API 响应结果</h2>
+    <div id="result" class="result">等待操作...</div>
+</div>
+
+<script>
+    const BASE_URL_INPUT = document.getElementById('base_url');
+    let BASE_URL = BASE_URL_INPUT.value;
+    let token = "";
+    let regCode = "";
+
+    // 更新 Base URL
+    BASE_URL_INPUT.addEventListener('input', function() {
+        BASE_URL = this.value;
+    });
+
+    function setOutput(data) {
+        const resultDiv = document.getElementById("result");
+        if (typeof data === 'object') {
+            resultDiv.textContent = JSON.stringify(data, null, 2);
+        } else {
+            resultDiv.textContent = data;
+        }
+        resultDiv.scrollTop = resultDiv.scrollHeight; // 滚动到底部
+    }
+
+    async function apiRequest(url, method, body = null, useAuth = false) {
+        const headers = { "Content-Type": "application/json" };
+        if (useAuth && token) {
+            headers["Authorization"] = "Bearer " + token;
+        }
+
+        const config = { method, headers };
+        if (body) config.body = JSON.stringify(body);
+
+        try {
+            console.log(`请求: ${method} ${BASE_URL}${url}`, config);
+            const response = await fetch(BASE_URL + url, config);
+            let data;
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.indexOf("application/json") !== -1) {
+                data = await response.json();
+            } else {
+                data = await response.text();
+            }
+            console.log(`响应: ${response.status}`, data);
+            return { ok: response.ok, status: response.status, data };
+        } catch (err) {
+            console.error("请求失败:", err);
+            return { ok: false, status: 0, data: { error: "请求失败: " + err.message } };
+        }
+    }
+
+    // --- 用户注册 ---
+    async function registerUser() {
+        const username = document.getElementById("reg_username").value;
+        const password = document.getElementById("reg_password").value;
+        if (!username || !password) {
+            alert("请填写用户名和密码");
+            return;
+        }
+        const res = await apiRequest("/Register", "POST", { username, password });
+        setOutput(res.data);
+    }
+
+    // --- 用户登录 ---
+    async function loginUser() {
+        const username = document.getElementById("login_username").value;
+        const password = document.getElementById("login_password").value;
+        if (!username || !password) {
+            alert("请填写用户名和密码");
+            return;
+        }
+        const res = await apiRequest("/Login", "POST", { username, password });
+        if (res.ok) {
+            token = res.data.access_token;
+            document.getElementById("token_display").textContent = token;
+            alert("登录成功！Token 已保存。");
+        }
+        setOutput(res.data);
+    }
+
+    // --- 匿名设备注册 ---
+    async function registerDeviceAnonymously() {
+        const deviceTypeId = parseInt(document.getElementById("device_type_id").value);
+        if (!deviceTypeId) {
+            alert("请输入有效的设备类型ID");
+            return;
+        }
+        // 注意：你的 Go 代码中 DeviceRegisterAnonymously 使用的是 ShouldBindQuery
+        // 所以参数应该放在 URL 查询字符串中
+        const res = await apiRequest(`/DeviceReg?device_type_id=${deviceTypeId}`, "POST");
+        if (res.ok) {
+            regCode = res.data.device.reg_code;
+            document.getElementById("reg_code_display").textContent = regCode;
+            // 也将 RegCode 填入绑定表单中，方便测试
+            document.getElementById("bind_reg_code").value = regCode;
+        }
+        setOutput(res.data);
+    }
+
+    // --- 使用 RegCode 绑定设备 ---
+    async function bindDeviceByRegCode() {
+        if (!token) {
+            alert("请先登录获取 Token");
+            return;
+        }
+        const regCodeInput = document.getElementById("bind_reg_code").value;
+        const deviceNick = document.getElementById("bind_device_nick").value;
+        const deviceRemark = document.getElementById("bind_device_remark").value;
+
+        if (!regCodeInput) {
+            alert("请输入 Reg Code");
+            return;
+        }
+
+        const res = await apiRequest("/BindDeviceByRegCode", "POST", {
+            reg_code: regCodeInput,
+            device_nick: deviceNick,
+            device_remark: deviceRemark
+        }, true); // true 表示需要认证
+
+        setOutput(res.data);
+    }
+
+</script>
+
+</body>
+</html>
