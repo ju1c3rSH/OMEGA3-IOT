@@ -24,12 +24,10 @@ func (d deviceFactory) CreateInstance(name, deviceType, description, ownerUUID s
 		OwnerUUID:    ownerUUID,
 		AddTime:      int64(time.Now().Unix()),
 		LastSeen:     int64(time.Now().Unix()),
-		Activated:    false,
-		Properties:   model.InstanceProperties{Items: make(map[string]model.PropertyItem)},
+		Properties:   model.Properties{Items: make(map[string]model.PropertyItem)},
 	}
 
-	// 初始化所有支持的属性
-	d.initializeAllProperties(instance)
+	//d.initializeAllProperties(instance)
 
 	return instance, nil
 }
