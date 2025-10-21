@@ -7,13 +7,44 @@ import (
 	"context"
 	"fmt"
 	"gorm.io/gorm"
+	"log"
 	"time"
 )
 
-type DeviceService struct{}
+type DeviceService struct {
+	mysqlDB     *gorm.DB
+	iotdbClient *db.IOTDBClient
+}
 
-func NewDeviceService() *DeviceService {
-	return &DeviceService{}
+func NewDeviceService(mysqlDB *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
+	return &DeviceService{
+		mysqlDB:     mysqlDB,
+		iotdbClient: iotDBClient,
+	}
+}
+func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
+
+	if instance.Properties.Items == nil {
+		instance.Properties.Items = make(map[string]*model.PropertyItem)
+	}
+	for key, value := range data {
+		//1创建一个新的 PropertyItem 指针，并复制值
+		//不担心复用，可以直接取地址 &value，但要注意循环变量作用域问题
+		//更安全的方式是创建副本：
+		valueCopy := value
+		va := valueCopy.Value
+		instance.Properties.Items[key].Value = va
+	}
+	instance.LastSeen = time.Now().Unix()
+	instance.UpdatedAt = time.Now()
+	instance.Online = true
+	dbSession := s.mysqlDB.Session(&gorm.Session{})
+	if err := dbSession.Save(instance).Error; err != nil {
+		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
+	}
+
+	log.Printf("Database record for device %s updated with new properties.", instance.InstanceUUID)
+	return nil
 }
 
 func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode string) (*model.DeviceRegistrationRecord, error) {
@@ -31,7 +62,7 @@ func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode s
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := db.DB.WithContext(ctx).Create(record).Error; err != nil {
+	if err := s.mysqlDB.WithContext(ctx).Create(record).Error; err != nil {
 		// 判断是否为唯一键冲突（如设备名重复）
 		if err != nil && len(err.Error()) > 0 && (err.Error() == "UNIQUE constraint failed" || err.Error() == "duplicate key value violates unique constraint") {
 			return nil, gorm.ErrDuplicatedKey
@@ -59,7 +90,7 @@ func (s *DeviceService) AddDevice(name string, deviceTypeID int, remark string, 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := db.DB.WithContext(ctx).Create(instance).Error; err != nil {
+	if err := s.mysqlDB.WithContext(ctx).Create(instance).Error; err != nil {
 		// 判断是否为唯一键冲突（如设备名重复）
 		if err != nil && len(err.Error()) > 0 && (err.Error() == "UNIQUE constraint failed" || err.Error() == "duplicate key value violates unique constraint") {
 			return nil, gorm.ErrDuplicatedKey
