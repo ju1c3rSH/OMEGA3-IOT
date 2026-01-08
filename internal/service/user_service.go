@@ -136,15 +136,19 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		// 你可能需要考虑回滚 Instance 的创建（这通常很复杂，需要事务或补偿操作）。
 		// 但在大多数情况下，标记失败比删除已成功创建的实例更安全。
 	}
-	actionPayload := map[string]interface{}{
-		"command":   "enable_properties_upload",
-		"timestamp": time.Now().Unix(),
-		"params": map[string]interface{}{
-			"interval_sec": 30,
-		},
-	}
+	/*
+		actionPayload := map[string]interface{}{
+			"command":   "enable_properties_upload",
+			"timestamp": time.Now().Unix(),
+			"params": map[string]interface{}{
+				"interval_sec": 30,
+			},
+		}
+	*/
+
+	actionPayload := model.NewEnablePropertiesUploadAction(30)
 	//TODO 将user_service通过事件驱动等的方式和mqtt_service解耦。
-	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", actionPayload); err != nil {
+	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", *actionPayload); err != nil {
 		log.Printf("Warning: Failed to send enable_properties_upload action to device %s: %v", instance.InstanceUUID, err)
 		//TODO 这里可以加上一个 Retry Pool..
 	}

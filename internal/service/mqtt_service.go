@@ -69,7 +69,7 @@ func NewMQTTService(brokerURL string, deviceService *DeviceService) (*MQTTServic
 	service.setupSubscription()
 	return service, nil
 }
-func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName string, payload interface{}) error {
+func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName string, payload model.Action) error {
 	topic := fmt.Sprintf("data/device/%s/action", deviceUUID)
 	payloadBytes, err := json.Marshal(payload)
 	//TODO 解耦
