@@ -1,4 +1,4 @@
-# OMEGA3-IOT 开发文档
+# OMEGA3-IOT
 
 ## 项目概述
 
