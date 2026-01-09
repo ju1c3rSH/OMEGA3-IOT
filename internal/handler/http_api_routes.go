@@ -10,26 +10,29 @@ import (
 
 func Cors() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// ✅ 允许所有来源（调试用）
+		// 允许所有来源（调试用）
 		c.Header("Access-Control-Allow-Origin", "*")
 
-		// ✅ 允许的请求方法
+		// 允许的请求方法
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 
-		// ✅ 允许的请求头
+		// 允许的请求头
 		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
 
-		// ✅ 暴露给前端的响应头（关键！）
+		// 暴露给前端的响应头（关键！）
 		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type, Access-Control-Allow-Origin")
 
-		// ✅ 预检请求缓存 12 小时
+		// 预检请求缓存 12 小时
 		c.Header("Access-Control-Max-Age", "86400")
 
 		// 如果是 OPTIONS 预检请求，直接返回 200
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(200)
-			return
-		}
+		/*
+			if c.Request.Method == "OPTIONS" {
+				c.AbortWithStatus(200)
+				return
+			}
+
+		*/
 
 		c.Next()
 	}

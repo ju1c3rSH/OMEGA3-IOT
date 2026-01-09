@@ -229,83 +229,129 @@ data/device/{device_uuid}/
     2. 服务器计算SHA-256哈希值
     3. 与数据库中存储的VerifyHash比对
     4. 匹配成功则处理请求，否则拒绝
+***
 
 ### 3.3 HTTP API
 
+系统遵循 RESTful 风格设计，所有 API 均位于 `/api/v1` 路径下。接口采用 JSON 格式进行数据交互，包含标准的响应封装（Code, Message, Data）。
+
 #### 3.3.1 公开端点（无需认证）
 
-| 端点                  | 方法   | 描述     |
-|---------------------|------|--------|
-| `/api/v1/GetTest`   | GET  | 测试端点   |
-| `/api/v1/health`    | GET  | 健康检查   |
-| `/api/v1/Register`  | POST | 用户注册   |
-| `/api/v1/Login`     | POST | 用户登录   |
-| `/api/v1/DeviceReg` | POST | 设备匿名注册 |
+这些接口主要用于系统检测、用户注册登录以及设备的首次匿名注册。
 
-#### 3.3.2 受保护端点（需要JWT认证）
+| 端点 | 方法 | 描述 | 请求参数示例 |
+| :--- | :--- | :--- | :--- |
+| `/api/v1/test` | GET | 系统连通性测试 | `?msg=ping` |
+| `/api/v1/health` | GET | 健康检查 | - |
+| `/api/v1/users/register` | POST | 用户注册 | `{"username": "admin", "password": "123"}` |
+| `/api/v1/users/login` | POST | 用户登录（获取 Token） | `{"username": "admin", "password": "123"}` |
+| `/api/v1/device/deviceRegisterAnon` | POST | 设备匿名注册（获取 RegCode） | `{"device_type_id": 1}` |
 
-| 端点                            | 方法   | 描述            |
-|-------------------------------|------|---------------|
-| `/api/v1/GetUserInfo`         | GET  | 获取用户信息        |
-| `/api/v1/AddDevice`           | POST | 添加设备（内部使用）    |
-| `/api/v1/BindDeviceByRegCode` | POST | 通过RegCode绑定设备 |
+#### 3.3.2 受保护端点（需要 JWT 认证）
+
+访问以下接口需要在 HTTP Header 中携带 `Authorization: Bearer <token>`。
+
+**1. 用户与设备管理 (User Scope)**
+
+| 端点 | 方法 | 描述 |
+| :--- | :--- | :--- |
+| `/api/v1/users/info` | GET | 获取当前用户信息 |
+| `/api/v1/users/getUserAllDevices` | GET | 获取当前用户绑定的所有设备列表 |
+| `/api/v1/users/addDevice` | POST | 直接添加设备（无需 RegCode） |
+| `/api/v1/users/bindDeviceByRegCode` | POST | 通过 RegCode 将匿名设备绑定到用户 |
+
+**2. 设备控制与共享 (Device Scope)**
+
+| 端点 | 方法 | 描述 | 权限要求 |
+| :--- | :--- | :--- | :--- |
+| `/api/v1/devices/accessible` | GET | 获取所有可访问设备（自有 + 他人分享） | - |
+| `/api/v1/devices/:instance_uuid/actions` | POST | 发送 MQTT 控制指令 | write |
+| `/api/v1/devices/:instance_uuid/share` | POST | 分享设备给其他用户 | write |
 
 #### 3.3.3 关键响应示例
 
-**用户注册响应**:
+以下示例展示了核心业务流程的 JSON 响应结构。
+
+**1. 用户注册响应 (`POST /users/register`)**
 
 ```json
 {
-  "code": 200,
-  "message": "User registered successfully",
-  "user": {
-    "id": 1,
-    "user_uuid": "a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8",
-    "username": "testuser",
-    "role": "user",
-    "created_at": "2026-01-09T10:00:00Z"
+  "code": 201,
+  "message": "User created successfully",
+  "data": {
+    "id": 101,
+    "username": "iot_admin",
+    "role": "standard",
+    "created_at": "2026-01-10T08:00:00Z",
+    "last_seen": "2026-01-10T08:00:00Z",
+    "last_ip": "127.0.0.1"
   }
 }
 ```
 
-**用户登录响应**:
+**2. 用户登录响应 (`POST /users/login`)**
 
 ```json
 {
   "code": 200,
   "message": "Login successful",
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": 1,
-    "username": "testuser",
-    "role": "user"
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": 101,
+      "username": "iot_admin",
+      "role": "standard"
+    }
   }
 }
 ```
 
-**设备匿名注册响应**:
+**3. 设备匿名注册响应 (`POST /device/deviceRegisterAnon`)**
+
+此接口由设备在出厂或重置后调用，返回关键的注册码与校验码。
 
 ```json
 {
   "code": 200,
   "message": "Device Registered successfully",
-  "device": {
-    "id": 154,
-    "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
-    "reg_code": "A0WU@HG6",
-    "verify_code": "tOFX*mc8=V}?Cnh2",
-    "type": 1,
-    "expires_at": 1760858932
+  "data": {
+    "device": {
+      "id": 154,
+      "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
+      "reg_code": "A0WU@HG6",
+      "verify_code": "tOFX*mc8=V}?Cnh2",
+      "type": 1,
+      "expires_at": 1760858932
+    }
   }
 }
 ```
+*字段说明：*
+*   `reg_code`: 8位用户注册码，用户在 App端输入此码绑定设备。
+*   `verify_code`: 设备端保存的校验凭证，用于 MQTT 连接鉴权（仅首次返回明文）。
 
-**字段说明**:
+**4. 绑定设备响应 (`POST /users/bindDeviceByRegCode`)**
 
-- `expires_at`: Unix时间戳（秒级），临时凭证有效期
-- `verify_code`: 16位校验码，**仅此一次返回明文**，后续只存储哈希值
-- `reg_code`: 8位注册码，绑定成功后立即失效
-
+```json
+{
+  "code": 201,
+  "message": "Device created successfully",
+  "data": {
+    "device": {
+      "id": 154,
+      "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
+      "name": "Living Room Sensor",
+      "type": 1,
+      "online": false,
+      "description": "Temperature sensor",
+      "remark": "Installed near window",
+      "created_at": 1704873600,
+      "last_seen": 1704873600,
+      "properties": {}
+    }
+  }
+}
+```
 ## 4. 业务流程
 
 ### 4.1 设备注册流程（两阶段模式）
