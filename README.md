@@ -21,18 +21,16 @@ go run main.go
 
 ## TODO Checklist
 
-### 🔧 代码优化
+###  代码优化
 - [ ] **设备类型加载封装** - `LoadDeviceTypeFromYAML` 需要重构为通用加载器 [5](#1-4) 
 - [ ] **实例创建验证** - `NewInstanceFromConfig` 需要加上验证Hash [6](#1-5) 
-- [ ] **设备注册防刷** - `RegisterDeviceAnonymously` 需要添加频率限制 [7](#1-6) 
-- [ ] **手动添加设备重构** - `AddDevice` 方法需要重构 [8](#1-7) 
+- [ ] **设备注册防刷** - `RegisterDeviceAnonymously` 需要添加频率限制 [7](#1-6)
 - [ ] **MQTT解耦** - `PublishActionToDevice` 需要解耦处理 [9](#1-8) 
 - [ ] **MQTT重试机制** - 添加Retry Pool处理发送失败 [10](#1-9) 
-- [ ] **设备工厂实现** - `GetSupportedTypes` 方法待实现 [11](#1-10) 
-- [ ] **配置地址修复** - `Broker.Address()` 方法需要修复 [12](#1-11) 
+- [ ] **设备工厂实现** - `GetSupportedTypes` 方法待实现 [11](#1-10)
 - [ ] **VerifyCode加盐** - `GenerateVerifyCode` 需要添加salt [13](#1-12) 
 
-### 📋 功能增强
+###  功能增强
 - [ ] **更好的Log保存系统** - 实现结构化日志和持久化存储
 - [ ] **权限账号管理机制** - 实现Group、Team多级权限管理
 - [ ] **属性类型验证** - PropertyMeta需要Required Type字段 [14](#1-13) 

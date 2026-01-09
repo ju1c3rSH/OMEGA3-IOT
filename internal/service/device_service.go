@@ -82,9 +82,9 @@ func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode s
 	return record, nil
 }
 
+// AddDevice - Deprecated
 func (s *DeviceService) AddDevice(name string, deviceTypeID int, remark string, ownerUUID string) (*model.Instance, error) {
-	//验证设备类型
-	//TODO这个不能直接用！！！！
+	//这里因为没有verifyHash，而且通过deviceTypeID方法已经被启用，不建议使用。
 	deviceType, valid := model.GlobalDeviceTypeManager.GetById(deviceTypeID)
 	if !valid {
 		return nil, gorm.ErrInvalidData

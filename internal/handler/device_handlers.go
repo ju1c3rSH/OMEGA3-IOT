@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/types"
 	"OMEGA3-IOT/internal/utils"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"log"
 	"net/http"
+	"time"
 )
 
 type DeviceHandler struct {
@@ -28,40 +32,33 @@ func (d *DeviceHandler) AddDevice(c *gin.Context) {
 		Description string `form:"description,omitempty"`
 	}
 	if err := c.ShouldBind(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+		c.JSON(http.StatusBadRequest, response)
 	}
 
 	userUUID, exists := c.Get("user_uuid")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated")
+		c.JSON(http.StatusUnauthorized, response)
 	}
 
 	device, err := d.deviceService.AddDevice(input.Name, input.DeviceType, input.Description, userUUID.(string))
 	if err != nil {
 		if err == gorm.ErrDuplicatedKey {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Device name already exists"})
+			response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 		}
 		if err == gorm.ErrInvalidData {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type"})
+			response := types.NewErrorResponse(http.StatusBadRequest, "Unsupported device type", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device: " + err.Error()})
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create device", err.Error())
+		c.JSON(http.StatusInternalServerError, response)
 
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Device created successfully",
-		"device": gin.H{
-			"id":          device.ID,
-			"uuid":        device.InstanceUUID,
-			"name":        device.Name,
-			"type":        device.Type,
-			"online":      device.Online,
-			"description": device.Description,
-			"created_at":  device.AddTime,
-			"last_seen":   device.LastSeen,
-			"properties":  device.Properties.Items,
-		},
-	})
+	response := types.NewSuccessResponseWithCode(device, http.StatusOK, "Device Created Successfully.")
+	c.JSON(http.StatusOK, response)
 }
 
 func (d *DeviceHandler) DeviceRegisterAnonymously(c *gin.Context) {
@@ -70,36 +67,37 @@ func (d *DeviceHandler) DeviceRegisterAnonymously(c *gin.Context) {
 	}
 
 	if err := c.ShouldBind(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing query parameter", "details": err.Error()})
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 	verifyCode, err := utils.GenerateVerifyCode()
 	if err != nil {
 		log.Printf("Failed to generate verify code: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate verification code"})
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to generate verification code", err.Error())
+		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
 	//verifyHash := utils.HashVerifyCode(verifyCode)
 
 	record, err := d.deviceService.RegisterDeviceAnonymously(input.DeviceTypeID, verifyCode)
-	{
-		if err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Device name already exists"})
-				return
-			}
-			if err == gorm.ErrInvalidData {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type"})
-				return
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device: " + err.Error()})
+	if err != nil {
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 			return
 		}
+		if errors.Is(err, gorm.ErrInvalidData) {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Unsupported device type", err.Error())
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create device", err.Error())
+		c.JSON(http.StatusInternalServerError, response)
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"code":    http.StatusOK,
-		"message": "Device Registered successfully",
+	response := types.NewSuccessResponseWithCode(gin.H{
 		"device": gin.H{
 			"id":          record.ID,
 			"uuid":        record.DeviceUUID,
@@ -108,7 +106,8 @@ func (d *DeviceHandler) DeviceRegisterAnonymously(c *gin.Context) {
 			"expires_at":  record.ExpiresAt,
 			"verify_code": verifyCode,
 		},
-	})
+	}, http.StatusOK, "Device Registered successfully")
+	c.JSON(http.StatusOK, response)
 }
 
 func AddDeviceHandlerFactory(deviceService *service.DeviceService) gin.HandlerFunc {
@@ -120,44 +119,37 @@ func AddDeviceHandlerFactory(deviceService *service.DeviceService) gin.HandlerFu
 			Description string `form:"description,omitempty"`
 		}
 		if err := c.ShouldBind(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 			return
 		}
 
 		userUUID, exists := c.Get("user_uuid")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated")
+			c.JSON(http.StatusUnauthorized, response)
 			return
 		}
 
 		device, err := deviceService.AddDevice(input.Name, input.DeviceType, input.Description, userUUID.(string))
 		if err != nil {
-			if err == gorm.ErrDuplicatedKey {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Device name already exists"})
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
+				c.JSON(http.StatusBadRequest, response)
 				return
 			}
-			if err == gorm.ErrInvalidData {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type"})
+			if errors.Is(err, gorm.ErrInvalidData) {
+				response := types.NewErrorResponse(http.StatusBadRequest, "Unsupported device type", err.Error())
+				c.JSON(http.StatusBadRequest, response)
 				return
 			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device: " + err.Error()})
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create device", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
 			return
 		}
+		response := types.NewSuccessResponseWithCode(device, http.StatusOK, "Device created successfully")
+		c.JSON(http.StatusOK, response)
 
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Device created successfully",
-			"device": gin.H{
-				"id":          device.ID,
-				"uuid":        device.InstanceUUID,
-				"name":        device.Name,
-				"type":        device.Type,
-				"online":      device.Online,
-				"description": device.Description,
-				"created_at":  device.AddTime,
-				"last_seen":   device.LastSeen,
-				"properties":  device.Properties.Items,
-			},
-		})
 	}
 }
 func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceService) gin.HandlerFunc {
@@ -167,36 +159,37 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 		}
 
 		if err := c.ShouldBind(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing query parameter", "details": err.Error()})
+			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 			return
 		}
 		verifyCode, err := utils.GenerateVerifyCode()
 		if err != nil {
 			log.Printf("Failed to generate verify code: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate verification code"})
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to generate verification code", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
 			return
 		}
 
 		//verifyHash := utils.HashVerifyCode(verifyCode)
 
 		record, err := deviceService.RegisterDeviceAnonymously(input.DeviceTypeID, verifyCode)
-		{
-			if err != nil {
-				if err == gorm.ErrDuplicatedKey {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Device name already exists"})
-					return
-				}
-				if err == gorm.ErrInvalidData {
-					c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported device type"})
-					return
-				}
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create device: " + err.Error()})
+		if err != nil {
+			if errors.Is(err, gorm.ErrDuplicatedKey) {
+				response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
+				c.JSON(http.StatusBadRequest, response)
 				return
 			}
+			if errors.Is(err, gorm.ErrInvalidData) {
+				response := types.NewErrorResponse(http.StatusBadRequest, "Unsupported device type", err.Error())
+				c.JSON(http.StatusBadRequest, response)
+				return
+			}
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create device", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
+			return
 		}
-		c.JSON(http.StatusOK, gin.H{
-			"code":    http.StatusOK,
-			"message": "Device Registered successfully",
+		response := types.NewSuccessResponseWithCode(gin.H{
 			"device": gin.H{
 				"id":          record.ID,
 				"uuid":        record.DeviceUUID,
@@ -205,7 +198,47 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 				"expires_at":  record.ExpiresAt,
 				"verify_code": verifyCode,
 			},
-		})
+		}, http.StatusOK, "Device Registered successfully")
+		c.JSON(http.StatusOK, response)
+	}
+}
+
+func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		instanceUUID := c.Param("instance_uuid")
+		if instanceUUID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing query parameter"})
+			return
+		}
+
+		var input struct {
+			Command string                 `json:"command" binding:"required"`
+			Params  map[string]interface{} `json:"params,omitempty"`
+		}
+
+		if err := c.ShouldBindJSON(&input); err != nil {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+
+		actionPayload := model.Action{
+			Command:   input.Command,
+			Params:    input.Params,
+			Timestamp: time.Now().Unix(),
+		}
+
+		err := mqttService.PublishActionToDevice(instanceUUID, actionPayload.Command, actionPayload)
+		if err != nil {
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to send action", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
+			return
+		}
+		response := types.NewSuccessResponseWithCode(gin.H{
+			"instance_uuid": instanceUUID,
+			"command":       input.Command,
+		}, http.StatusOK, "Action sent successfully")
+		c.JSON(http.StatusOK, response)
 	}
 }
 
@@ -215,7 +248,8 @@ func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) g
 		instanceUUID := c.Param("instance_uuid")
 		userUUID, exists := c.Get("user_uuid")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated", "")
+			c.JSON(http.StatusUnauthorized, response)
 			return
 		}
 
@@ -225,7 +259,8 @@ func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) g
 			ExpiresAt     *int64 `json:"expires_at"`                                                //使用*int64永不过期 (nil)
 		}
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
+			c.JSON(http.StatusBadRequest, response)
 			return
 		}
 
@@ -240,11 +275,13 @@ func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) g
 		// 例如，如果 ShareDevice 方法接收 *time.Time
 		err := deviceShareService.ShareDevice(instanceUUID, userUUID.(string), input.ShareWithUUID, *input.ExpiresAt, input.Permission)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to share device: " + err.Error()})
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to share device", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Device shared successfully"})
+		response := types.NewSuccessResponseWithCode("[]", http.StatusOK, "Device shared successfully")
+		c.JSON(http.StatusCreated, response)
 	}
 }
 

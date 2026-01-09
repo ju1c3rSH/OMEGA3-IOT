@@ -33,7 +33,7 @@ func Cors() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, mqttService *service.MQTTService) {
 	v1 := router.Group("/api/v1")
 
 	v1.GET("/test", func(c *gin.Context) {
@@ -64,6 +64,8 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	protected := v1.Group("/")
 	protected.Use(MiddleWares.JwtAuthMiddleWare())
 	{
+		// 设备控制（需要write权限）
+		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), SendActionHandlerFactory(mqttService))
 		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
 		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
 	}
@@ -80,8 +82,6 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 		    protected.GET("/devices/:instance_uuid", DeviceAccessMiddleware("read"), deviceHandler.GetDevice)
 		    protected.GET("/devices/:instance_uuid/properties", DeviceAccessMiddleware("read"), deviceHandler.GetDeviceProperties)
 
-		    // 设备控制（需要write权限）
-		    protected.POST("/devices/:instance_uuid/actions", DeviceAccessMiddleware("write"), deviceHandler.SendAction)
 
 		    // 获取所有可访问设备
 		    protected.GET("/devices/accessible", deviceHandler.GetAccessibleDevices)
