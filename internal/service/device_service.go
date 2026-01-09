@@ -32,12 +32,17 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 	for key, value := range data {
 		valueCopy := value
 		va := valueCopy.Value
-
-		// 修复：先初始化PropertyItem
-		if instance.Properties.Items[key] == nil {
-			instance.Properties.Items[key] = &model.PropertyItem{
-				Meta: value.Meta, // 保留原有的meta信息
+		/*
+			// 修复：先初始化PropertyItem
+			if instance.Properties.Items[key] == nil {
+				instance.Properties.Items[key] = &model.PropertyItem{
+					Meta: value.Meta, // 保留原有的meta信息
+				}
 			}
+			这虽然可以解决，但是是下策
+		*/
+		if instance.Properties.Items[key] == nil {
+			return fmt.Errorf("Failed to update device %s: The key provided was not matched with the properties.", instance.InstanceUUID)
 		}
 
 		instance.Properties.Items[key].Value = va

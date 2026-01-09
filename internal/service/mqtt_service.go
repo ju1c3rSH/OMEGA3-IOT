@@ -123,7 +123,7 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 	}
 
 	if err := m.deviceService.updateDeviceProperties(instance, rawPropsData); err != nil {
-
+		log.Printf("Failed to update device properties: %v", err)
 	}
 }
 
