@@ -1,0 +1,20 @@
+database:
+  mysqldsn: username:password@tcp(domain:port)/your_table?charset=your_charset&parseTime=True&loc=Local
+
+
+server:
+  port: your_port
+
+IoTDB:
+  host: "your_domain"
+  port: your_port
+  username: your_user_name
+  password: your_password
+  queryTimeoutMs: 4000
+  pool:
+
+    maxConnections: 5
+    timeout: 60000
+    fetchMetadataAuto: false
+
+
