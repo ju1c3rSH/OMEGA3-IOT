@@ -21,6 +21,11 @@ type GetUserAllDevicesResponse struct {
 	Instances     []model.Instance `json:"instances"`
 }
 
+type GetUserAllAccessibleDevicesResponse struct {
+	InstanceCount int              `json:"instance_count"`
+	Instances     []model.Instance `json:"instances"`
+}
+
 func NewUserService(mqttSvc *MQTTService, mysqlDB *gorm.DB, iotDBClient *db.IOTDBClient) *UserService {
 	return &UserService{
 		mqttSvc:     mqttSvc,
