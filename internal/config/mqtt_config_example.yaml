@@ -1,0 +1,14 @@
+broker:
+  host: "domain"
+  port: your_port
+  protocol: "tcp"
+
+# 客户端配置
+client:
+
+  id: "omega3-iot-server"
+  username: ""
+  password: ""
+  clean_session: true
+  auto_reconnect: true
+  qos: 1
