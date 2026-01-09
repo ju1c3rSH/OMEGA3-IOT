@@ -34,27 +34,37 @@ func Cors() gin.HandlerFunc {
 	}
 }
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceService *service.DeviceService) {
-	apiGroup := router.Group("/api/v1")
+	v1 := router.Group("/api/v1")
 
-	apiGroup.GET("/GetTest", func(c *gin.Context) {
+	v1.GET("/test", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
 		c.JSON(200, gin.H{
 			"message": msg,
 		})
 	})
-	apiGroup.GET("/health", func(c *gin.Context) {
+	v1.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
-	apiGroup.POST("Register", userHandler.Register)
-
-	apiGroup.POST("/Login", userHandler.Login)
-	apiGroup.POST("/DeviceReg", DeviceRegisterAnonymouslyHandlerFactory(deviceService))
-	protected := apiGroup.Group("")
-	protected.Use(MiddleWares.JwtAuthMiddleWare())
+	userGroup := v1.Group("/users")
 	{
-		protected.GET("/GetUserInfo", userHandler.GetUserInfo)
-		protected.POST("/AddDevice", AddDeviceHandlerFactory(deviceService))
-		protected.POST("/BindDeviceByRegCode", userHandler.BindDeviceByRegCode)
+		userGroup.POST("/register", userHandler.Register)
+		userGroup.POST("/login", userHandler.Login)
+
+		userProtected := userGroup.Group("")
+		userProtected.Use(MiddleWares.JwtAuthMiddleWare())
+		{
+			userProtected.GET("/getUserAllDevices", userHandler.GetUserAllDevices)
+			userProtected.GET("/info", userHandler.GetUserInfo)
+			userProtected.POST("/addDevice", AddDeviceHandlerFactory(deviceService))
+			userProtected.POST("bindDeviceByRegCode", userHandler.BindDeviceByRegCode)
+		}
 	}
+
+	deviceGroup := v1.Group("/device")
+	{
+		deviceGroup.POST("/deviceRegisterAnon", DeviceRegisterAnonymouslyHandlerFactory(deviceService))
+
+	}
+
 }

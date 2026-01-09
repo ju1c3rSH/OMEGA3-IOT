@@ -5,6 +5,7 @@ import (
 	"OMEGA3-IOT/internal/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"log"
 	"net/http"
 )
 
@@ -94,7 +95,28 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		},
 	})
 }
+func (h *UserHandler) GetUserAllDevices(c *gin.Context) {
+	userUUID, exists := c.Get("user_uuid")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Authentication required"})
+		return
+	}
 
+	userUUIDStr, ok := userUUID.(string)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid user UUID type in context"})
+		return
+	}
+
+	response, err := h.userService.GetUserAllDevices(userUUIDStr)
+	if err != nil {
+		log.Printf("Error getting devices for user %s: %v\n", userUUIDStr, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve devices"})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+
+}
 func (h *UserHandler) BindDeviceByRegCode(c *gin.Context) {
 	var input model.BindDeviceByRegCode
 	if err := c.ShouldBind(&input); err != nil {

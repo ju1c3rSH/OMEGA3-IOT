@@ -43,7 +43,6 @@ func (c *User) SetPassword(password string) error {
 	}
 	c.PasswordHash = string(hashedPassword)
 	return nil
-
 }
 
 func (c *User) CheckPassword(password string) error {
