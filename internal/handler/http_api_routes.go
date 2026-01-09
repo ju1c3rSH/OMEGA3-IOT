@@ -3,6 +3,7 @@ package handler
 import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/service"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -34,7 +35,9 @@ func Cors() gin.HandlerFunc {
 	}
 }
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, mqttService *service.MQTTService) {
-	v1 := router.Group("/api/v1")
+	rateLimiter := MiddleWares.NewRateLimiter(15, time.Minute)
+
+	v1 := router.Group("/api/v1", rateLimiter.RateLimitMiddleware())
 
 	v1.GET("/test", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
