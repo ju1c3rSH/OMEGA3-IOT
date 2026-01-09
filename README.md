@@ -37,22 +37,9 @@ go run main.go
 - [ ] **权限账号管理机制** - 实现Group、Team多级权限管理
 - [ ] **属性类型验证** - PropertyMeta需要Required Type字段 [14](#1-13) 
 
-## 关键文件
 
-| 文件 | 用途 |
-|------|------|
-| `internal/model/device.go` | 设备数据模型和类型管理器 |
-| `internal/service/device_service.go` | 设备注册和管理业务逻辑 |
-| `internal/service/mqtt_service.go` | MQTT通信处理 |
-| `internal/service/user_service.go` | 用户认证和设备绑定 |
-| `DesignStandard.md` | 项目设计规范 |
-
-## 开发规范
-
-- JSON字段使用下划线命名法 [15](#1-14) 
-- 设备类型通过YAML配置驱动 [16](#1-15) 
-- 所有数据库操作使用GORM，设置10秒超时 [17](#1-16) 
-
+## 开发规范 
+- 详情请查看Designstandard.md
 ## Notes
 
 项目目前处于开发阶段，核心功能已实现但需要优化和扩展。重点关注设备注册流程、MQTT通信和权限管理系统的完善。
