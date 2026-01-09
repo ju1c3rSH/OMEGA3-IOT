@@ -30,11 +30,16 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
 	}
 	for key, value := range data {
-		//1创建一个新的 PropertyItem 指针，并复制值
-		//不担心复用，可以直接取地址 &value，但要注意循环变量作用域问题
-		//更安全的方式是创建副本：
 		valueCopy := value
 		va := valueCopy.Value
+
+		// 修复：先初始化PropertyItem
+		if instance.Properties.Items[key] == nil {
+			instance.Properties.Items[key] = &model.PropertyItem{
+				Meta: value.Meta, // 保留原有的meta信息
+			}
+		}
+
 		instance.Properties.Items[key].Value = va
 	}
 	instance.LastSeen = time.Now().Unix()
