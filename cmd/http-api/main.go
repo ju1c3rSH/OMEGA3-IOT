@@ -15,7 +15,8 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(userHandler *handler.UserHandler, config config.Config, deviceService *service.DeviceService) error {
+func Run(userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) error {
+
 	log.Println("[HTTP_API] Run function called")
 
 	r := gin.Default()
@@ -27,7 +28,7 @@ func Run(userHandler *handler.UserHandler, config config.Config, deviceService *
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceService)
+	handler.RegRoutes(r, userHandler, deviceHandler, deviceService, deviceShareService)
 
 	log.Println("Starting server on :" + config.Server.Port)
 	return r.Run(":" + config.Server.Port)

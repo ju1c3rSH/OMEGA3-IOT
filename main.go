@@ -56,15 +56,16 @@ func main() {
 	}
 	defer mqttService.Disconnect(250)
 
-	log.Println("[Main] Before creating UserService")
 	userService = service.NewUserService(mqttService, db.DB, iotdbClient)
 	log.Println("[Main] UserService created")
-	log.Println("[Main] Before creating UserHandler")
+
 	userHandler := handler.NewUserHandler(userService)
 	log.Println("[Main] UserHandler created")
 
-	log.Println("[Main] Before calling http_api.Run")
-	httpApiErr := http_api.Run(userHandler, cfg, deviceService)
+	deviceShareService := service.NewDeviceShareService(db.DB)
+	log.Println("[Main] DeviceShareService created")
+	deviceHandler := handler.NewDeviceHandler(*deviceService, *deviceShareService)
+	httpApiErr := http_api.Run(userHandler, deviceHandler, cfg, deviceService, deviceShareService)
 	log.Println("[Main] After calling http_api.Run")
 
 	if httpApiErr != nil {

@@ -23,8 +23,11 @@ type Instance struct {
 	UpdatedAt    time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 	VerifyHash   string     `gorm:"type:varchar(255)" json:"verify_hash"`
 	//IsActivated  bool       `gorm:"default:false" json:"is_activated"`不需要，因为有DeviceRegistrationRecord的机制，出现在这个库里的肯定是激活绑定了的
-	SN     string `gorm:"type:varchar(100);null" json:"sn,omitempty"`
-	Remark string `gorm:"type:text" json:"remark,omitempty"`
+	SN          string `gorm:"type:varchar(100);null" json:"sn,omitempty"`
+	Status      string `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
+	IsShared    bool   `gorm:"default:false" json:"is_shared"`
+	SharedCount int    `gorm:"default:0" json:"shared_count"`
+	Remark      string `gorm:"type:text" json:"remark,omitempty"`
 }
 
 type DeviceTemplate struct {
@@ -34,6 +37,7 @@ type DeviceTemplate struct {
 	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
 	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
 }
+
 type DeviceRegistrationRecord struct {
 	// ID 是记录的主键
 	ID uint `gorm:"primaryKey" json:"id"`
@@ -95,6 +99,19 @@ type DeviceAddTemplate struct {
 	Description string `json:"description"`
 	Type        int    `json:"type" gorm:"primaryKey"`
 	SN          string `json:"sn" gorm:"primaryKey"`
+}
+
+type DeviceShare struct {
+	ID             uint   `gorm:"primaryKey;autoIncrement" json:"id"`
+	InstanceUUID   string `gorm:"type:varchar(36);not null;index" json:"instance_uuid"`
+	SharedWithUUID string `gorm:"type:varchar(36);not null;index" json:"shared_with_uuid"`
+	SharedByUUID   string `gorm:"type:varchar(36);not null;index" json:"shared_by_uuid"`
+	Permission     string `gorm:"type:varchar(20);not null;default:'read'" json:"permission" validate:"oneof=read write read_write"`
+	// 移除 IsValid 字段
+	Status    string `gorm:"type:varchar(20);not null;default:'active'" json:"status"` // active, revoked
+	CreatedAt int64  `json:"created_at"`                                               // 移除 autoCreateTime 标签
+	UpdatedAt int64  `json:"updated_at"`                                               // 移除 autoUpdateTime 标签
+	ExpiresAt *int64 `gorm:"index" json:"expires_at,omitempty"`                        // 使用 *int64，nil 表示永不过期
 }
 
 type ActionMeta struct {

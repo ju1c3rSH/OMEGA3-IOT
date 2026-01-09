@@ -33,7 +33,7 @@ func Cors() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceService *service.DeviceService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) {
 	v1 := router.Group("/api/v1")
 
 	v1.GET("/test", func(c *gin.Context) {
@@ -57,12 +57,39 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceService *serv
 			userProtected.GET("/getUserAllDevices", userHandler.GetUserAllDevices)
 			userProtected.GET("/info", userHandler.GetUserInfo)
 			userProtected.POST("/addDevice", AddDeviceHandlerFactory(deviceService))
-			userProtected.POST("bindDeviceByRegCode", userHandler.BindDeviceByRegCode)
+			userProtected.POST("/bindDeviceByRegCode", userHandler.BindDeviceByRegCode)
 		}
 	}
 
+	protected := v1.Group("/")
+	protected.Use(MiddleWares.JwtAuthMiddleWare())
+	{
+		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
+		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
+	}
+
+	/*
+		protected := apiGroup.Group("")
+		protected.Use(MiddleWares.JwtAuthMiddleWare())
+		{
+		    // 设备所有者操作
+		    protected.POST("/devices/:instance_uuid/share", DeviceAccessMiddleware("write"), deviceHandler.ShareDevice)
+		    protected.DELETE("/devices/:instance_uuid/share/:shared_with_uuid", DeviceAccessMiddleware("write"), deviceHandler.RevokeShare)
+
+		    // 设备访问（需要read权限）
+		    protected.GET("/devices/:instance_uuid", DeviceAccessMiddleware("read"), deviceHandler.GetDevice)
+		    protected.GET("/devices/:instance_uuid/properties", DeviceAccessMiddleware("read"), deviceHandler.GetDeviceProperties)
+
+		    // 设备控制（需要write权限）
+		    protected.POST("/devices/:instance_uuid/actions", DeviceAccessMiddleware("write"), deviceHandler.SendAction)
+
+		    // 获取所有可访问设备
+		    protected.GET("/devices/accessible", deviceHandler.GetAccessibleDevices)
+		}
+	*/
 	deviceGroup := v1.Group("/device")
 	{
+
 		deviceGroup.POST("/deviceRegisterAnon", DeviceRegisterAnonymouslyHandlerFactory(deviceService))
 
 	}
