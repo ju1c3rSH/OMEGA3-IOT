@@ -4,12 +4,6 @@
 
 OMEGA3-IOT 是一个基于 Go 的物联网设备管理平台，采用 HTTP REST API + MQTT 双协议架构。 [1](#1-0) 
 
-## 核心架构
-
-- **设备注册流程**: 匿名注册 → RegCode绑定 → 正式实例 [2](#1-1) 
-- **认证系统**: JWT (用户) + VerifyCode (设备) [3](#1-2) 
-- **数据模型**: Instance (设备实例) + DeviceRegistrationRecord (临时注册) [4](#1-3) 
-
 ## 快速启动
 
 ```bash
