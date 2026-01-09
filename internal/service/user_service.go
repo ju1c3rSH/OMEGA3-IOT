@@ -16,6 +16,10 @@ type UserService struct {
 	mysqlDB     *gorm.DB
 	iotDBClient *db.IOTDBClient
 }
+type GetUserAllDevicesResponse struct {
+	InstanceCount int              `json:"instance_count"`
+	Instances     []model.Instance `json:"instances"`
+}
 
 func NewUserService(mqttSvc *MQTTService, mysqlDB *gorm.DB, iotDBClient *db.IOTDBClient) *UserService {
 	return &UserService{
@@ -24,7 +28,20 @@ func NewUserService(mqttSvc *MQTTService, mysqlDB *gorm.DB, iotDBClient *db.IOTD
 		iotDBClient: iotDBClient,
 	}
 }
+func (s *UserService) GetUserAllDevices(userUUID string) (*GetUserAllDevicesResponse, error) {
+	var instances []model.Instance
 
+	if err := s.mysqlDB.Where("owner_uuid = ?", userUUID).Find(&instances).Error; err != nil {
+		return nil, fmt.Errorf("user %s not found, detals: %s", userUUID, err)
+	}
+	count := len(instances)
+
+	response := &GetUserAllDevicesResponse{
+		InstanceCount: count,
+		Instances:     instances,
+	}
+	return response, nil
+}
 func (s *UserService) Register(username, password string, ip string) (*model.User, error) {
 	var existingUser model.User
 	if err := s.mysqlDB.Where("user_name = ?", username).First(&existingUser).Error; err == nil {
