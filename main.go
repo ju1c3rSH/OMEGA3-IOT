@@ -46,28 +46,22 @@ func main() {
 		log.Fatalf("[Main] Failed to initialize IoTDB schema: %v", err)
 	}
 	defer iotdbClient.Close()
-
 	deviceService := service.NewDeviceService(db.DB, iotdbClient)
-
 	brokerURL := "tcp://yuyuko.food:1883"
 	mqttService, err := service.NewMQTTService(brokerURL, deviceService)
 	if err != nil {
 		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
 	}
 	defer mqttService.Disconnect(250)
-
 	userService = service.NewUserService(mqttService, db.DB, iotdbClient)
 	log.Println("[Main] UserService created")
-
 	userHandler := handler.NewUserHandler(userService)
 	log.Println("[Main] UserHandler created")
-
 	deviceShareService := service.NewDeviceShareService(db.DB)
 	log.Println("[Main] DeviceShareService created")
 	deviceHandler := handler.NewDeviceHandler(*deviceService, *deviceShareService)
-	httpApiErr := http_api.Run(userHandler, deviceHandler, cfg, deviceService, deviceShareService)
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, cfg, deviceService, deviceShareService)
 	log.Println("[Main] After calling http_api.Run")
-
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
 	}

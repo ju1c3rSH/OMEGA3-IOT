@@ -15,7 +15,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) error {
+func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -28,7 +28,7 @@ func Run(userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler,
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceHandler, deviceService, deviceShareService)
+	handler.RegRoutes(r, userHandler, deviceHandler, deviceService, deviceShareService, mqttService)
 
 	log.Println("Starting server on :" + config.Server.Port)
 	return r.Run(":" + config.Server.Port)

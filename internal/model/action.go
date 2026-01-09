@@ -11,6 +11,7 @@ type Action struct {
 type ActionType string
 
 const (
+	GOON                   ActionType = "go_on"
 	EnablePropertiesUpload ActionType = "enable_properties_upload"
 	ToggleLight            ActionType = "ToggleLight"
 )
