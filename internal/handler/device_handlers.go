@@ -203,6 +203,7 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 	}
 }
 
+// POST /devices/:instance_uuid/actions
 func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")
@@ -242,6 +243,99 @@ func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc 
 	}
 }
 
+// POST /devices/:instance_uuid/getHistoryData
+func GetDeviceHistoryHandlerFactory(deviceService *service.DeviceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		instanceUUID := c.Param("instance_uuid")
+		if instanceUUID == "" {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Missing instance_uuid", "")
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+
+		userUUID, exists := c.Get("user_uuid")
+		if !exists {
+			response := types.NewErrorResponse(http.StatusUnauthorized, "Unauthorized: missing user_uuid", "")
+			c.JSON(http.StatusUnauthorized, response)
+			return
+		}
+		userUUIDStr, ok := userUUID.(string)
+		if !ok {
+			response := types.NewErrorResponse(http.StatusUnauthorized, "Unauthorized: invalid user_uuid format", "")
+			c.JSON(http.StatusUnauthorized, response)
+			return
+		}
+
+		var input struct {
+			StartTimestamp int64    `json:"start_timestamp" binding:"required"`
+			EndTimestamp   int64    `json:"end_timestamp" binding:"required"`
+			Properties     []string `json:"properties,omitempty"`
+			Limit          int      `json:"limit,omitempty" binding:"max=5000,min=1"`
+			Offset         int      `json:"offset,omitempty" binding:"min=0"`
+		}
+		if err := c.ShouldBindJSON(&input); err != nil {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid request parameters", err.Error())
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+
+		if input.StartTimestamp >= input.EndTimestamp {
+			response := types.NewErrorResponse(http.StatusBadRequest, "start_timestamp must be less than end_timestamp", "")
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+		//时间范围检查(最大30天=2592000 秒)
+		if input.EndTimestamp-input.StartTimestamp > 2592000 {
+			response := types.NewErrorResponse(http.StatusUnprocessableEntity, "Time range exceeds maximum allowed (30 days)", "")
+			c.JSON(http.StatusUnprocessableEntity, response)
+			return
+		}
+
+		if input.Limit <= 0 {
+			input.Limit = 1000
+		}
+		if input.Offset < 0 {
+			input.Offset = 0
+		}
+
+		historyData, err := deviceService.GetDeviceHistoryData(
+			userUUIDStr,
+			input.StartTimestamp,
+			input.EndTimestamp,
+			input.Limit,
+			input.Offset,
+			input.Properties,
+		)
+		if err != nil {
+			if err.Error() == "device not found" {
+				response := types.NewErrorResponse(http.StatusNotFound, "Device not found", "")
+				c.JSON(http.StatusNotFound, response)
+				return
+			}
+			if err.Error() == "permission denied" {
+				response := types.NewErrorResponse(http.StatusForbidden, "Access denied: insufficient permissions", "")
+				c.JSON(http.StatusForbidden, response)
+				return
+			}
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Internal server error", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
+			return
+		}
+
+		returnedCount := len(*historyData)
+		hasMore := returnedCount >= input.Limit
+
+		response := types.NewSuccessResponseWithCode(gin.H{
+			"instance_uuid":  instanceUUID,
+			"total_count":    returnedCount, // TODO: 需要服务层返回真实总数
+			"returned_count": returnedCount,
+			"has_more":       hasMore,
+			"records":        historyData,
+		}, http.StatusOK, "Device shared successfully")
+		c.JSON(http.StatusOK, response)
+	}
+}
+
 // POST /api/v1/devices/{instance_uuid}/share
 func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -256,24 +350,16 @@ func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) g
 		var input struct {
 			ShareWithUUID string `json:"shared_with_uuid" binding:"required"`
 			Permission    string `json:"permission" binding:"required,oneof=read write read_write"` // 使用 binding 验证权限
-			ExpiresAt     *int64 `json:"expires_at"`                                                //使用*int64永不过期 (nil)
+			ExpiresAt     int64  `json:"expires_at"`                                                //使用*int64永不过期 (nil)
 		}
+
 		if err := c.ShouldBindJSON(&input); err != nil {
 			response := types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter", err.Error())
 			c.JSON(http.StatusBadRequest, response)
 			return
 		}
 
-		// 调用 Service 方法 (假设 Service 方法签名已调整为接收 *time.Time)
-		// err := deviceShareService.ShareDevice(instanceUUID, input.ShareWithUUID, input.Permission, expiresAt, userUUID.(string))
-		// if err != nil {
-		//     c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to share device: " + err.Error()})
-		//     return
-		// }
-
-		// 临时：使用 ShareDeviceService 中假设的方法 (需要你根据实际情况调整)
-		// 例如，如果 ShareDevice 方法接收 *time.Time
-		err := deviceShareService.ShareDevice(instanceUUID, userUUID.(string), input.ShareWithUUID, *input.ExpiresAt, input.Permission)
+		err := deviceShareService.ShareDevice(instanceUUID, userUUID.(string), input.ShareWithUUID, input.ExpiresAt, input.Permission)
 		if err != nil {
 			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to share device", err.Error())
 			c.JSON(http.StatusInternalServerError, response)

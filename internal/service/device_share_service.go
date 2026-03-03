@@ -146,7 +146,7 @@ func isValidStatus(status string) bool {
 
 func (s *DeviceShareService) calculateShareInfo(instanceUUID string) (int, bool, error) {
 	var shareCount int64
-	now := time.Now()
+	now := time.Now().Unix()
 	err := s.mysqldb.Model(&model.DeviceShare{}).
 		Where("instance_uuid = ? AND status = ?", instanceUUID, StatusActive).
 		Where("(expires_at IS NULL OR expires_at > ?)", now).
