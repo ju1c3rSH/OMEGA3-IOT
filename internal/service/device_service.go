@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -65,7 +66,110 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 
 	return nil
 }
+func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp int64, endTimestamp int64, limit int, offset int, properties []string) (*[]model.DeviceHistoryData, error) {
+	//permission check
 
+	session, err := s.iotdbClient.SessionPool.GetSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	defer s.iotdbClient.SessionPool.PutBack(session)
+
+	instance, err := s.GetDeviceByInstanceUUID(instanceUUID)
+	if err != nil {
+		return nil, err
+	}
+	devicePath := fmt.Sprintf("root.mm1.device_data.%s", instanceUUID)
+	if properties == nil || len(properties) == 0 {
+		properties = make([]string, 0, len(instance.Properties.Items))
+		for propName := range instance.Properties.Items {
+			properties = append(properties, propName)
+		}
+	}
+	var propertyPaths []string
+	for _, prop := range properties {
+		propertyPaths = append(propertyPaths, fmt.Sprintf("%s.%s", devicePath, prop))
+	}
+	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d",
+		strings.Join(propertyPaths, ", "), devicePath, startTimestamp, endTimestamp, limit, offset)
+	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotdbClient.Config.IoTDB.QueryTimeoutMs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer sessionDataSet.Close()
+	var historyData []model.DeviceHistoryData
+
+	for {
+		hasNext, err := sessionDataSet.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate result set: %w", err)
+		}
+		if !hasNext {
+			break
+		}
+
+		row, err := sessionDataSet.GetRowRecord()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get row record: %w", err)
+		}
+		timestamp := row.GetTimestamp()
+		currentTsSec := timestamp / 1000
+		var properties model.Properties
+		properties.Items = make(map[string]*model.PropertyItem)
+
+		columnCount := sessionDataSet.GetColumnCount()
+		for i := 0; i < columnCount; i++ {
+			columnName := sessionDataSet.GetColumnName(i)
+			val := sessionDataSet.GetValue(columnName)
+
+			parts := strings.Split(columnName, ".")
+			propName := parts[len(parts)-1]
+			valStr := ""
+			if val != nil {
+				valStr = fmt.Sprintf("%v", val)
+			}
+
+			meta, ok := instance.Properties.Items[propName]
+			if !ok {
+				meta = &model.PropertyItem{
+					Value: valStr,
+					Meta: model.PropertyMeta{
+						Description: "Unknown Property",
+						Format:      "string",
+					},
+				}
+			} else {
+				meta.Value = valStr
+			}
+			properties.Items[propName] = meta
+		}
+
+		record := model.DeviceHistoryData{
+			Timestamp:  currentTsSec,
+			Properties: properties,
+		}
+		historyData = append(historyData, record)
+	}
+
+	return &historyData, nil
+}
+func (s *DeviceService) IsInstanceExists(instanceUUID string) (bool, error) {
+	if err := s.mysqlDB.Where("instance_uuid = ?", instanceUUID).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+func (s *DeviceService) GetDeviceByInstanceUUID(instanceUUID string) (*model.Instance, error) {
+	var instance model.Instance
+	exists, err := s.IsInstanceExists(instanceUUID)
+	if err != nil && !exists {
+		return nil, err
+	}
+	if err := s.mysqlDB.Where("instance_uuid = ?", instanceUUID).First(&instance).Error; err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
 func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode string) (*model.DeviceRegistrationRecord, error) {
 	_, valid := model.GlobalDeviceTypeManager.GetById(deviceTypeID)
 	if !valid {

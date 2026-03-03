@@ -262,12 +262,12 @@ data/device/{device_uuid}/
 
 **2. 设备控制与共享 (Device Scope)**
 
-| 端点 | 方法 | 描述 | 权限要求 |
-| :--- | :--- | :--- | :--- |
-| `/api/v1/devices/accessible` | GET | 获取所有可访问设备（自有 + 他人分享） | - |
+| 端点 | 方法   | 描述 | 权限要求 |
+| :--- |:-----| :--- | :--- |
+| `/api/v1/devices/accessible` | GET  | 获取所有可访问设备（自有 + 他人分享） | - |
 | `/api/v1/devices/:instance_uuid/actions` | POST | 发送 MQTT 控制指令 | write |
 | `/api/v1/devices/:instance_uuid/share` | POST | 分享设备给其他用户 | write |
-
+|`/api/v1/devices/:instance_uuid/getHistoryData` | POST |获取设备的历史数据| read|
 #### 3.3.3 关键响应示例
 
 以下示例展示了核心业务流程的 JSON 响应结构。
@@ -352,6 +352,210 @@ data/device/{device_uuid}/
   }
 }
 ```
+
+# 5.获取设备历史数据 API 规范
+
+## 1. 基本信息
+
+| 项目 | 值 |
+|------|-----|
+| **接口路径** | `/api/v1/devices/:instance_uuid/getHistoryData` |
+| **请求方法** | `POST` |
+| **认证方式** | JWT Token (Bearer) |
+| **权限要求** | `read` (设备读取权限) |
+| **Content-Type** | `application/json` |
+
+---
+
+## 2. 请求体参数
+
+```json
+{
+  "start_timestamp": 1704067200,
+  "end_timestamp": 1704153600,
+  "properties": ["battery_level", "gps_location"],
+  "limit": 1000,
+  "offset": 0
+}
+```
+
+| 参数名 | 类型 | 必填 | 默认值 | 描述 |
+|--------|------|------|--------|------|
+| `start_timestamp` | int64 | 是 | - | 起始时间 (Unix 时间戳，秒) |
+| `end_timestamp` | int64 | 是 | - | 结束时间 (Unix 时间戳，秒) |
+| `properties` | []string | 否 | 全部属性 | 需要查询的属性列表 |
+| `limit` | int | 否 | 1000 | 单次返回最大记录数 |
+| `offset` | int | 否 | 0 | 分页偏移量 |
+
+---
+
+## 3. 参数约束
+
+| 约束项 | 规则 |
+|--------|------|
+| **时间顺序** | `start_timestamp` < `end_timestamp` |
+| **时间范围** | `end_timestamp - start_timestamp` ≤ 2592000 (30天) |
+| **时间戳格式** | 正整数 (Unix 秒级时间戳) |
+| **limit 范围** | 1 ~ 5000 |
+| **offset 范围** | ≥ 0 |
+| **properties** | 必须是设备类型定义中存在的属性名 |
+
+---
+
+## 4. 返回示例
+
+### 4.1 成功响应 (Code: 200)
+
+```json
+{
+  "code": 200,
+  "message": "Get device history data successfully",
+  "data": {
+    "instance_uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
+    "total_count": 2580,
+    "returned_count": 1000,
+    "has_more": true,
+    "records": [
+      {
+        "timestamp": 1704067200,
+        "properties": {
+          "battery_level": {
+            "value": "85",
+            "meta": {
+              "writable": true,
+              "description": "电池电量",
+              "unit": "%",
+              "range": [0, 100],
+              "format": "int"
+            }
+          },
+          "gps_location": {
+            "value": "39.9042,116.4074",
+            "meta": {
+              "writable": false,
+              "description": "GPS 位置",
+              "format": "string"
+            }
+          }
+        }
+      },
+      {
+        "timestamp": 1704067260,
+        "properties": {
+          "battery_level": {
+            "value": "84",
+            "meta": {
+              "writable": true,
+              "description": "电池电量",
+              "unit": "%",
+              "range": [0, 100],
+              "format": "int"
+            }
+          },
+          "gps_location": {
+            "value": "39.9045,116.4078",
+            "meta": {
+              "writable": false,
+              "description": "GPS 位置",
+              "format": "string"
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+```
+
+### 4.2 响应字段说明
+
+| 字段名 | 类型 | 描述 |
+|--------|------|------|
+| `instance_uuid` | string | 设备唯一标识符 |
+| `total_count` | int | 符合条件的总记录数 |
+| `returned_count` | int | 本次实际返回的记录数 |
+| `has_more` | bool | 是否还有更多数据 (用于分页判断) |
+| `records` | []object | 历史数据记录列表 |
+| `records[].timestamp` | int64 | 数据上报时间 (Unix 时间戳) |
+| `records[].properties` | object | 属性数据集合 |
+
+### 4.3 错误响应示例
+
+**参数错误 (Code: 400)**
+```json
+{
+  "code": 400,
+  "message": "Invalid request parameters",
+  "data": {
+    "errors": [
+      {
+        "field": "start_timestamp",
+        "reason": "start_timestamp must be less than end_timestamp"
+      }
+    ]
+  }
+}
+```
+
+**权限不足 (Code: 403)**
+```json
+{
+  "code": 403,
+  "message": "Access denied: insufficient permissions for this device",
+  "data": null
+}
+```
+
+**设备不存在 (Code: 404)**
+```json
+{
+  "code": 404,
+  "message": "Device not found",
+  "data": null
+}
+```
+
+**时间范围过大 (Code: 422)**
+```json
+{
+  "code": 422,
+  "message": "Time range exceeds maximum allowed (30 days)",
+  "data": {
+    "max_range_seconds": 2592000
+  }
+}
+```
+
+---
+
+## 5. 使用示例 (cURL)
+
+```bash
+curl -X POST "https://api.example.com/api/v1/devices/7b64cea8-ed24-4e73-b0a9-2af503bd4e69/getHistoryData" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_timestamp": 1704067200,
+    "end_timestamp": 1704153600,
+    "properties": ["battery_level", "gps_location"],
+    "limit": 1000,
+    "offset": 0
+  }'
+```
+
+---
+
+## 6. 规范一致性检查
+
+| 规范项 | 状态 | 说明 |
+|--------|------|------|
+| JSON 字段命名 | ✅ | 小写 + 下划线 (`start_timestamp`) |
+| 响应格式 | ✅ | `code/message/data` 统一结构 |
+| 认证方式 | ✅ | JWT Bearer Token |
+| 错误码定义 | ✅ | 遵循项目错误码规范 |
+| 时间戳格式 | ✅ | Unix 秒级时间戳 |
+| UUID 格式 | ✅ | UUID v4 格式 (36 字符) |
+| 属性数据结构 | ✅ | 与 MQTT 上报格式一致 (`value` + `meta`) |
 ## 4. 业务流程
 
 ### 4.1 设备注册流程（两阶段模式）

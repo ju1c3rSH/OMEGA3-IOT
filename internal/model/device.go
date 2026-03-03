@@ -37,7 +37,10 @@ type DeviceTemplate struct {
 	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
 	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
 }
-
+type DeviceHistoryData struct {
+	Timestamp  int64      `json:"timestamp"`
+	Properties Properties `gorm:"type:json" json:"properties"`
+}
 type DeviceRegistrationRecord struct {
 	// ID 是记录的主键
 	ID uint `gorm:"primaryKey" json:"id"`

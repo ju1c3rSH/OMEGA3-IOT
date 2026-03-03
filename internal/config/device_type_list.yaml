@@ -32,3 +32,14 @@ device_types:
         unit: "%"
         range: [0, 100]
         format: "float"
+
+  - id: 3
+    name: "ToggleMachine"
+    description: "无情的开关机器"
+    properties:
+      switch_status:
+        writable: true
+        description: "开关状态（Toggle）"
+        unit: "state"
+        range: [0,1]
+        format: "bool"
