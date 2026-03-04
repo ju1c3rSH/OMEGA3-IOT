@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMEGA3-IOT 全功能调试台 v2.0</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0061a4; --primary-bg: #e3f2fd;
+            --primary-dark: #004b8a;
+            --secondary: #535f70; --bg: #f5f7fa;
+            --surface: #ffffff; --border: #e0e4ea;
+            --success: #2e7d32; --success-bg: #e8f5e9;
+            --warning: #ed6c02; --warning-bg: #fff3e0;
+            --error: #c62828; --error-bg: #ffebee;
+            --post-badge: #bbdefb; --post-text: #0d47a1;
+            --get-badge: #c8e6c9; --get-text: #1b5e20;
+            --code-bg: #1e1e1e; --code-text: #d4d4d4;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; }
+        body { background: var(--bg); color: #1f1f1f; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Header */
+        header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 16px; padding: 12px 16px; 
+            background: var(--surface); border-radius: 12px; 
+            border: 1px solid var(--border); box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        h1 { font-size: 1.3rem; display: flex; align-items: center; gap: 10px; color: var(--primary); }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .config-input { 
+            padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; 
+            font-size: 0.85rem; width: 280px; transition: 0.2s;
+        }
+        .config-input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px var(--primary-bg); }
+        
+        .status-pill { 
+            font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; 
+            background: #eee; color: #666; display: inline-flex; align-items: center; gap: 5px; 
+            font-weight: 500;
+        }
+        .status-pill.active { background: var(--success-bg); color: var(--success); }
+        .status-pill.warn { background: var(--warning-bg); color: var(--warning); }
+        
+        /* Layout */
+        .main-grid { 
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; 
+            flex: 1; padding-bottom: 200px;
+        }
+        @media(max-width: 1200px) { .main-grid { grid-template-columns: 1fr 1fr; } }
+        @media(max-width: 768px) { .main-grid { grid-template-columns: 1fr; } }
+
+        /* Cards */
+        .card { 
+            background: var(--surface); border-radius: 12px; border: 1px solid var(--border); 
+            overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,0.04); 
+            display: flex; flex-direction: column; min-height: 200px;
+        }
+        .card.highlight { border-color: var(--primary); box-shadow: 0 2px 8px rgba(0,97,164,0.1); }
+        .card-header { 
+            padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid var(--border); 
+            font-weight: 600; display: flex; align-items: center; gap: 8px; color: #374151; 
+            font-size: 0.95rem;
+        }
+        .card-header .material-symbols-outlined { font-size: 1.2rem; }
+        .card-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+        
+        /* Form Elements */
+        .form-row { display: flex; flex-direction: column; gap: 6px; }
+        .form-row.inline { flex-direction: row; align-items: center; gap: 10px; }
+        .form-row.inline > * { flex: 1; }
+        
+        label { font-size: 0.75rem; color: #64748b; font-weight: 500; margin-bottom: 2px; }
+        input, select, textarea { 
+            width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; 
+            border-radius: 6px; font-size: 0.9rem; transition: 0.2s; background: #fff;
+        }
+        input:focus, select:focus, textarea:focus { 
+            border-color: var(--primary); outline: none; box-shadow: 0 0 0 2px var(--primary-bg); 
+        }
+        textarea { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; resize: vertical; min-height: 40px; }
+        
+        /* Buttons */
+        .btn { 
+            width: 100%; padding: 8px 12px; background: var(--primary); color: white; 
+            border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; 
+            display: flex; align-items: center; justify-content: center; gap: 6px; 
+            transition: 0.2s; font-weight: 500;
+        }
+        .btn:hover:not(:disabled) { background: var(--primary-dark); }
+        .btn:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+        .btn.secondary { background: var(--secondary); }
+        .btn.secondary:hover:not(:disabled) { background: #445061; }
+        .btn.danger { background: var(--error); }
+        .btn.danger:hover:not(:disabled) { background: #b71c1c; }
+        .btn-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        
+        /* Badges */
+        .badge { 
+            font-size: 0.7rem; padding: 2px 7px; border-radius: 4px; font-weight: 600; 
+            margin-right: 6px; font-family: monospace; letter-spacing: 0.5px;
+        }
+        .post { background: var(--post-badge); color: var(--post-text); }
+        .get { background: var(--get-badge); color: var(--get-text); }
+        
+        /* API Row */
+        .api-row { 
+            border-bottom: 1px dashed #e2e8f0; padding-bottom: 12px; margin-bottom: 12px; 
+        }
+        .api-row:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+        .api-title { font-weight: 600; font-size: 0.85rem; color: #334155; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        
+        /* Device List */
+        .device-item { 
+            padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; 
+            margin-bottom: 8px; background: #fafafa; cursor: pointer; transition: 0.15s;
+        }
+        .device-item:hover { border-color: var(--primary); background: var(--primary-bg); }
+        .device-item.selected { border-color: var(--primary); background: var(--primary-bg); box-shadow: 0 0 0 2px var(--primary-bg); }
+        .device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .device-name { font-weight: 600; font-size: 0.9rem; color: #1e293b; }
+        .device-status { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; }
+        .device-status.online { background: var(--success-bg); color: var(--success); }
+        .device-status.offline { background: #f1f5f9; color: #64748b; }
+        .device-meta { font-size: 0.75rem; color: #64748b; }
+        
+        /* Properties Display */
+        .props-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+        .prop-item { 
+            padding: 6px 8px; background: #f8fafc; border-radius: 6px; 
+            font-size: 0.8rem; border: 1px solid #e2e8f0;
+        }
+        .prop-key { font-weight: 500; color: #475569; }
+        .prop-val { color: #0f172a; font-family: monospace; }
+        
+        /* Console */
+        .console-drawer {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 200px;
+            background: var(--code-bg); color: var(--code-text); border-top: 2px solid #444;
+            display: flex; flex-direction: column; z-index: 100;
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+        }
+        .console-header { 
+            padding: 6px 16px; background: #2d2d2d; font-size: 0.8rem; 
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #444;
+        }
+        .console-header .stats { font-size: 0.75rem; color: #888; }
+        .console-body { 
+            flex: 1; overflow-y: auto; padding: 12px 16px; 
+            font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; 
+            white-space: pre-wrap; line-height: 1.5;
+        }
+        .log-entry { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+        .log-entry:last-child { border-bottom: none; }
+        .log-meta { font-size: 0.75rem; color: #888; margin-bottom: 4px; display: flex; gap: 12px; }
+        .log-method { font-weight: 600; padding: 1px 6px; border-radius: 3px; }
+        .log-method.get { background: var(--get-badge); color: var(--get-text); }
+        .log-method.post { background: var(--post-badge); color: var(--post-text); }
+        .log-status { font-weight: 600; }
+        .log-status.ok { color: #81c784; }
+        .log-status.err { color: #e57373; }
+        .log-status.warn { color: #ffb74d; }
+        .log-content { color: #d4d4d4; }
+        .log-content.json { color: #9cdcfe; }
+        
+        /* Tabs */
+        .tabs { display: flex; gap: 2px; background: #f1f5f9; padding: 3px; border-radius: 8px; margin-bottom: 12px; }
+        .tab { 
+            flex: 1; padding: 6px; text-align: center; font-size: 0.8rem; 
+            border-radius: 6px; cursor: pointer; color: #64748b; transition: 0.15s;
+        }
+        .tab.active { background: #fff; color: var(--primary); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        
+        /* Toast */
+        .toast {
+            position: fixed; top: 20px; right: 20px; padding: 12px 20px; 
+            background: #333; color: #fff; border-radius: 8px; font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000;
+            animation: slideIn 0.3s ease; display: none;
+        }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--error); }
+        .toast.warn { background: var(--warning); color: #1f1f1f; }
+        @keyframes slideIn { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        
+        /* Loading */
+        .loading { 
+            display: inline-block; width: 14px; height: 14px; 
+            border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; 
+            border-top-color: #fff; animation: spin 0.8s linear infinite; 
+            margin-right: 6px; vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Code block */
+        .code-block { 
+            background: #1a1a1a; color: #d4d4d4; padding: 10px 12px; 
+            border-radius: 6px; font-family: monospace; font-size: 0.8rem; 
+            overflow-x: auto; max-height: 150px; white-space: pre;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1><span class="material-symbols-outlined">hub</span> OMEGA3-IOT <span style="font-size:0.85rem; opacity:0.6; margin-left:8px">Debugger v2.0</span></h1>
+    <div class="header-right">
+        <input type="text" id="base_url" class="config-input" value="http://localhost:27015" placeholder="API Base URL">
+        <div id="auth_indicator" class="status-pill">● 未认证</div>
+        <button class="btn secondary" style="width:auto; padding:6px 14px; font-size:0.85rem" onclick="clearStorage()">清除缓存</button>
+    </div>
+</header>
+
+<div class="main-grid">
+
+    <!-- Column 1: System & Auth -->
+    <div style="display:flex; flex-direction:column; gap:14px">
+        
+        <!-- System Health -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">dns</span> 系统状态</div>
+            <div class="card-body">
+                <div class="btn-group">
+                    <button class="btn secondary" onclick="apiCall('/api/v1/health','GET')"><span class="badge get">GET</span>Health</button>
+                    <button class="btn secondary" onclick="apiCall('/api/v1/test?msg=ping','GET')"><span class="badge get">GET</span>Test</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auth -->
+        <div class="card highlight">
+            <div class="card-header"><span class="material-symbols-outlined">badge</span> 用户认证</div>
+            <div class="card-body">
+                <div class="form-row inline">
+                    <div>
+                        <label>用户名</label>
+                        <input type="text" id="username" value="admin" placeholder="3-20字符">
+                    </div>
+                    <div>
+                        <label>密码</label>
+                        <input type="password" id="password" value="123456" placeholder="≥8字符">
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn" onclick="userRegister()"><span class="badge post">POST</span>注册</button>
+                    <button class="btn" onclick="userLogin()"><span class="badge post">POST</span>登录</button>
+                </div>
+                <div class="form-row">
+                    <label>Access Token <span id="token_hint" style="color:#94a3b8; font-weight:normal">(自动管理)</span></label>
+                    <input type="text" id="token_display" disabled style="background:#f8fafc; color:#64748b; font-family:monospace; font-size:0.8rem">
+                </div>
+                <button class="btn secondary" onclick="apiCall('/api/v1/users/info','GET',null,true)">
+                    <span class="badge get">GET</span>获取用户信息
+                </button>
+            </div>
+        </div>
+
+        <!-- Device Quick List -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">devices</span> 我的设备</div>
+            <div class="card-body" style="overflow-y:auto; max-height:220px">
+                <button class="btn secondary" onclick="fetchUserDevices()" style="margin-bottom:8px">
+                    <span class="badge get">GET</span>刷新设备列表
+                </button>
+                <div id="device_list" style="font-size:0.85rem">
+                    <div style="color:#94a3b8; text-align:center; padding:20px">点击"刷新设备列表"加载</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column 2: Device Management -->
+    <div style="display:flex; flex-direction:column; gap:14px">
+        
+        <!-- Device Registration -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">add_box</span> 设备注册</div>
+            <div class="card-body">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('direct')">直接创建</div>
+                    <div class="tab" onclick="switchTab('anon')">匿名注册</div>
+                </div>
+                
+                <!-- Direct Creation -->
+                <div id="tab-direct">
+                    <div class="form-row inline">
+                        <div>
+                            <label>设备名称</label>
+                            <input type="text" id="dev_name" value="SmartLight-01" placeholder="3-50字符">
+                        </div>
+                        <div>
+                            <label>类型ID</label>
+                            <input type="number" id="dev_type" value="1" min="1" style="width:80px">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>描述 (可选)</label>
+                        <input type="text" id="dev_desc" placeholder="≤200字符">
+                    </div>
+                    <button class="btn" onclick="addDeviceDirect()"><span class="badge post">POST</span>/users/addDevice</button>
+                </div>
+                
+                <!-- Anonymous Registration -->
+                <div id="tab-anon" style="display:none">
+                    <div class="form-row inline">
+                        <label style="width:100px">设备类型ID</label>
+                        <input type="number" id="anon_type" value="1" min="1">
+                    </div>
+                    <button class="btn secondary" onclick="registerAnon()" style="margin-top:8px">
+                        <span class="badge post">POST</span>/device/deviceRegisterAnon
+                    </button>
+                    <div class="form-row" style="margin-top:12px">
+                        <label>返回凭证 (自动填充)</label>
+                        <div class="code-block" id="anon_result" style="font-size:0.75rem; max-height:80px">等待注册...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Binding -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">link</span> 设备绑定</div>
+            <div class="card-body">
+                <div class="form-row">
+                    <label>注册码 RegCode</label>
+                    <input type="text" id="bind_code" placeholder="8位注册码 (如: A0WU@HG6)">
+                </div>
+                <div class="form-row inline">
+                    <div>
+                        <label>设备昵称</label>
+                        <input type="text" id="bind_nick" value="My Device" placeholder="3-50字符">
+                    </div>
+                    <div>
+                        <label>备注</label>
+                        <input type="text" id="bind_remark" placeholder="可选">
+                    </div>
+                </div>
+                <button class="btn" onclick="bindDeviceByCode()" style="margin-top:4px">
+                    <span class="badge post">POST</span>/users/bindDeviceByRegCode
+                </button>
+            </div>
+        </div>
+
+        <!-- Context Config -->
+        <div class="card highlight" style="border-color:var(--primary)">
+            <div class="card-header" style="color:var(--primary); background:var(--primary-bg)">
+                <span class="material-symbols-outlined">settings_remote</span> 操作上下文
+            </div>
+            <div class="card-body">
+                <div class="form-row">
+                    <label>目标设备 UUID <span style="color:#94a3b8; font-weight:normal">(下方操作自动使用)</span></label>
+                    <input type="text" id="target_uuid" placeholder="从设备列表选择或手动输入" style="font-family:monospace; font-size:0.85rem">
+                </div>
+                <div style="display:flex; gap:8px; margin-top:8px">
+                    <button class="btn secondary" style="flex:1; font-size:0.8rem" onclick="copyUUID()">复制 UUID</button>
+                    <button class="btn secondary" style="flex:1; font-size:0.8rem" onclick="clearTarget()">清空</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Column 3: Control & Data -->
+    <div style="display:flex; flex-direction:column; gap:14px">
+        
+        <!-- Device Control -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">bolt</span> 设备控制 (MQTT)</div>
+            <div class="card-body">
+                <div class="form-row">
+                    <label>指令 Command</label>
+                    <input type="text" id="mqtt_cmd" value="toggle" placeholder="如: toggle, set_upload_interval">
+                </div>
+                <div class="form-row">
+                    <label>参数 Params (JSON)</label>
+                    <textarea id="mqtt_params" placeholder='{"interval_sec": 30}'>{}</textarea>
+                </div>
+                <button class="btn" onclick="sendDeviceAction()">
+                    <span class="badge post">POST</span>/devices/{uuid}/actions
+                </button>
+            </div>
+        </div>
+
+        <!-- Device Sharing -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">share</span> 设备共享</div>
+            <div class="card-body">
+                <div class="form-row">
+                    <label>被分享用户 UUID</label>
+                    <input type="text" id="share_to_uuid" placeholder="b2c3d4e5-f6a7-8901-bcde-f23456789012" style="font-family:monospace; font-size:0.8rem">
+                </div>
+                <div class="form-row inline">
+                    <div>
+                        <label>权限</label>
+                        <select id="share_perm">
+                            <option value="read">👁️ 只读</option>
+                            <option value="write">✏️ 可写</option>
+                            <option value="read_write" selected>🔧 读写</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>有效期(秒)</label>
+                        <input type="number" id="share_exp" value="86400" min="0" placeholder="0=永久">
+                    </div>
+                </div>
+                <button class="btn" onclick="shareDevice()" style="margin-top:4px">
+                    <span class="badge post">POST</span>/devices/{uuid}/share
+                </button>
+                <button class="btn secondary" onclick="apiCall('/api/v1/devices/accessible','GET',null,true)" style="margin-top:8px">
+                    <span class="badge get">GET</span>获取可访问设备
+                </button>
+            </div>
+        </div>
+
+        <!-- History Data Query -->
+        <div class="card">
+            <div class="card-header"><span class="material-symbols-outlined">history</span> 历史数据查询</div>
+            <div class="card-body">
+                <div class="form-row inline">
+                    <div>
+                        <label>开始时间 (Unix秒)</label>
+                        <input type="number" id="hist_start" placeholder="1704067200">
+                    </div>
+                    <div>
+                        <label>结束时间 (Unix秒)</label>
+                        <input type="number" id="hist_end" placeholder="1704153600">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>查询属性 (JSON数组, 空=全部)</label>
+                    <input type="text" id="hist_props" placeholder='["battery_level", "gps_location"]' style="font-family:monospace; font-size:0.85rem">
+                </div>
+                <div class="form-row inline">
+                    <div>
+                        <label>Limit</label>
+                        <input type="number" id="hist_limit" value="100" min="1" max="5000" style="width:80px">
+                    </div>
+                    <div>
+                        <label>Offset</label>
+                        <input type="number" id="hist_offset" value="0" min="0" style="width:80px">
+                    </div>
+                </div>
+                <button class="btn" onclick="queryHistoryData()" style="margin-top:4px">
+                    <span class="badge post">POST</span>/devices/{uuid}/getHistoryData
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Console Drawer -->
+<div class="console-drawer">
+    <div class="console-header">
+        <span>📋 调试日志</span>
+        <div class="stats">
+            <span id="log_count">0</span> 条记录 | 
+            <span id="last_time">-</span>
+        </div>
+        <span style="cursor:pointer; color:#94a3b8" onclick="clearConsole()">✕ 清除</span>
+    </div>
+    <div class="console-body" id="console_out">
+        <div style="color:#666">// OMEGA3-IOT Debugger Ready. 等待操作...</div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div id="toast" class="toast"></div>
+
+<script>
+// ==================== Global State ====================
+const state = {
+    token: localStorage.getItem('iot_token') || '',
+    tokenExpiry: localStorage.getItem('iot_token_expiry') || 0,
+    lastUUID: localStorage.getItem('iot_last_uuid') || '',
+    lastRegCode: '',
+    devices: []
+};
+
+// ==================== Initialization ====================
+document.addEventListener('DOMContentLoaded', () => {
+    // Restore token UI
+    if (state.token && state.tokenExpiry > Date.now()) {
+        updateAuthUI(true);
+        document.getElementById('token_display').value = maskToken(state.token);
+        if (state.lastUUID) {
+            document.getElementById('target_uuid').value = state.lastUUID;
+        }
+    } else {
+        // Token expired
+        clearAuth();
+    }
+    
+    // Set default timestamps for history query
+    const now = Math.floor(Date.now() / 1000);
+    document.getElementById('hist_start').value = now - 3600; // 1 hour ago
+    document.getElementById('hist_end').value = now;
+    
+    log('Debugger initialized', 'info');
+});
+
+// ==================== Core API Function ====================
+async function apiCall(path, method, body = null, useAuth = false) {
+    const baseUrl = document.getElementById('base_url').value.replace(/\/$/, '');
+    const url = `${baseUrl}${path}`;
+    const startTime = performance.now();
+    
+    // Prepare headers
+    const headers = { 'Content-Type': 'application/json' };
+    if (useAuth) {
+        if (!state.token || state.tokenExpiry <= Date.now()) {
+            showToast('Token 无效或已过期，请重新登录', 'warn');
+            updateAuthUI(false);
+            return null;
+        }
+        headers['Authorization'] = `Bearer ${state.token}`;
+    }
+    
+    // Log request
+    log(`→ ${method} ${path}`, 'request', { method, path, body: body || null });
+    
+    try {
+        const response = await fetch(url, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : null
+        });
+        
+        const duration = ((performance.now() - startTime) / 1000).toFixed(2);
+        const contentType = response.headers.get('content-type') || '';
+        
+        // Parse response
+        let data;
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            data = await response.text();
+        }
+        
+        // Handle standard response format {code, message, data}
+        if (response.ok && data?.code >= 200 && data?.code < 300) {
+            log(`✓ ${response.status} (${duration}s)`, 'success', { 
+                code: data.code, message: data.message, response: data.data || data 
+            });
+            showToast(data.message || '操作成功', 'success');
+            return data;
+        } else {
+            const errorMsg = data?.message || data?.error || response.statusText || 'Unknown error';
+            log(`✗ ${response.status} (${duration}s): ${errorMsg}`, 'error', { 
+                code: data?.code || response.status, error: data?.data || data 
+            });
+            showToast(errorMsg, 'error');
+            throw new Error(errorMsg);
+        }
+        
+    } catch (error) {
+        log(`✗ Network Error: ${error.message}`, 'error', { error: error.toString() });
+        showToast(`请求失败: ${error.message}`, 'error');
+        throw error;
+    }
+}
+
+// ==================== Auth Functions ====================
+function updateAuthUI(isLoggedIn) {
+    const el = document.getElementById('auth_indicator');
+    if (isLoggedIn && state.tokenExpiry > Date.now()) {
+        el.className = 'status-pill active';
+        el.innerHTML = `● 已认证 <span style="opacity:0.7">(${formatExpiry(state.tokenExpiry)})</span>`;
+    } else {
+        el.className = 'status-pill warn';
+        el.textContent = '● 未认证';
+    }
+}
+
+function clearAuth() {
+    state.token = '';
+    state.tokenExpiry = 0;
+    localStorage.removeItem('iot_token');
+    localStorage.removeItem('iot_token_expiry');
+    document.getElementById('token_display').value = '';
+    updateAuthUI(false);
+    showToast('已退出登录', 'warn');
+}
+
+function maskToken(token) {
+    if (!token || token.length < 20) return token;
+    return token.substring(0, 16) + '...' + token.substring(token.length - 8);
+}
+
+function formatExpiry(timestamp) {
+    const diff = timestamp - Date.now();
+    if (diff < 0) return '已过期';
+    if (diff < 3600000) return `${Math.floor(diff/60000)}分钟后过期`;
+    if (diff < 86400000) return `${Math.floor(diff/3600000)}小时后过期`;
+    return `${Math.floor(diff/86400000)}天后过期`;
+}
+
+async function userRegister() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    
+    if (username.length < 3 || username.length > 20) {
+        showToast('用户名需3-20字符', 'warn'); return;
+    }
+    if (password.length < 8) {
+        showToast('密码需≥8字符', 'warn'); return;
+    }
+    
+    await apiCall('/api/v1/users/register', 'POST', { username, password });
+}
+
+async function userLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    
+    const res = await apiCall('/api/v1/users/login', 'POST', { username, password });
+    if (res?.data?.access_token) {
+        state.token = res.data.access_token;
+        // JWT expiry: assume 24h, or parse from token if needed
+        state.tokenExpiry = Date.now() + 24 * 60 * 60 * 1000;
+        
+        localStorage.setItem('iot_token', state.token);
+        localStorage.setItem('iot_token_expiry', state.tokenExpiry);
+        
+        document.getElementById('token_display').value = maskToken(state.token);
+        updateAuthUI(true);
+        showToast('登录成功', 'success');
+        
+        // Auto-fetch user devices after login
+        setTimeout(fetchUserDevices, 300);
+    }
+}
+
+// ==================== Device Management ====================
+function switchTab(tabName) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('tab-direct').style.display = tabName === 'direct' ? 'block' : 'none';
+    document.getElementById('tab-anon').style.display = tabName === 'anon' ? 'block' : 'none';
+}
+
+async function addDeviceDirect() {
+    const name = document.getElementById('dev_name').value.trim();
+    const device_type = parseInt(document.getElementById('dev_type').value);
+    const description = document.getElementById('dev_desc').value.trim();
+    
+    if (name.length < 3) { showToast('设备名称需≥3字符', 'warn'); return; }
+    
+    const res = await apiCall('/api/v1/users/addDevice', 'POST', { 
+        name, device_type, description 
+    }, true);
+    
+    if (res?.data?.uuid) {
+        state.lastUUID = res.data.uuid;
+        localStorage.setItem('iot_last_uuid', state.lastUUID);
+        document.getElementById('target_uuid').value = state.lastUUID;
+        log(`[Auto] UUID saved: ${state.lastUUID}`, 'info');
+        fetchUserDevices(); // Refresh list
+    }
+}
+
+async function registerAnon() {
+    const device_type_id = parseInt(document.getElementById('anon_type').value);
+    
+    const res = await apiCall('/api/v1/device/deviceRegisterAnon', 'POST', { device_type_id });
+    
+    if (res?.data?.device) {
+        const d = res.data.device;
+        state.lastRegCode = d.reg_code;
+        state.lastUUID = d.uuid;
+        
+        document.getElementById('bind_code').value = d.reg_code || '';
+        document.getElementById('target_uuid').value = d.uuid || '';
+        
+        document.getElementById('anon_result').textContent = 
+`RegCode: ${d.reg_code}
+UUID:    ${d.uuid}
+Verify:  ${d.verify_code?.substring(0,8)}...
+Expires: ${new Date(d.expires_at * 1000).toLocaleString()}`;
+        
+        log(`[Anon] RegCode: ${d.reg_code}, UUID: ${d.uuid}`, 'success');
+        showToast('匿名注册成功，请保存 RegCode', 'success');
+    }
+}
+
+async function bindDeviceByCode() {
+    const reg_code = document.getElementById('bind_code').value.trim();
+    const device_nick = document.getElementById('bind_nick').value.trim();
+    const device_remark = document.getElementById('bind_remark').value.trim();
+    
+    if (!reg_code || reg_code.length !== 8) {
+        showToast('请输入8位有效 RegCode', 'warn'); return;
+    }
+    if (device_nick.length < 3) {
+        showToast('设备昵称需≥3字符', 'warn'); return;
+    }
+    
+    const res = await apiCall('/api/v1/users/bindDeviceByRegCode', 'POST', {
+        reg_code, device_nick, device_remark
+    }, true);
+    
+    if (res?.data?.device?.uuid) {
+        state.lastUUID = res.data.device.uuid;
+        localStorage.setItem('iot_last_uuid', state.lastUUID);
+        document.getElementById('target_uuid').value = state.lastUUID;
+        fetchUserDevices();
+    }
+}
+
+async function fetchUserDevices() {
+    const res = await apiCall('/api/v1/users/getUserAllDevices', 'GET', null, true);
+    const container = document.getElementById('device_list');
+    
+    if (!res?.data?.devices?.length) {
+        container.innerHTML = '<div style="color:#94a3b8; text-align:center; padding:20px">暂无设备</div>';
+        return;
+    }
+    
+    state.devices = res.data.devices;
+    container.innerHTML = state.devices.map(dev => `
+        <div class="device-item ${state.lastUUID === dev.uuid ? 'selected' : ''}" 
+             onclick="selectDevice('${dev.uuid}', '${escapeHtml(dev.name)}')">
+            <div class="device-header">
+                <span class="device-name">${escapeHtml(dev.name)}</span>
+                <span class="device-status ${dev.online ? 'online' : 'offline'}">
+                    ${dev.online ? '● 在线' : '○ 离线'}
+                </span>
+            </div>
+            <div class="device-meta">
+                UUID: ${dev.uuid.substring(0,8)}... | 类型: ${dev.type}
+            </div>
+            ${dev.properties ? `
+            <div class="props-grid">
+                ${Object.entries(dev.properties).slice(0,4).map(([k,v]) => `
+                    <div class="prop-item">
+                        <span class="prop-key">${escapeHtml(k)}:</span> 
+                        <span class="prop-val">${escapeHtml(v.value)}</span>
+                    </div>
+                `).join('')}
+            </div>` : ''}
+        </div>
+    `).join('');
+    
+    log(`[Devices] Loaded ${state.devices.length} devices`, 'info');
+}
+
+function selectDevice(uuid, name) {
+    state.lastUUID = uuid;
+    localStorage.setItem('iot_last_uuid', uuid);
+    document.getElementById('target_uuid').value = uuid;
+    
+    // Update UI selection
+    document.querySelectorAll('.device-item').forEach(el => el.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+    
+    log(`[Context] Selected: ${name} (${uuid.substring(0,8)}...)`, 'info');
+    showToast(`已选择: ${name}`, 'success');
+}
+
+function copyUUID() {
+    const uuid = document.getElementById('target_uuid').value;
+    if (uuid) {
+        navigator.clipboard.writeText(uuid);
+        showToast('UUID 已复制', 'success');
+    }
+}
+
+function clearTarget() {
+    document.getElementById('target_uuid').value = '';
+    state.lastUUID = '';
+    localStorage.removeItem('iot_last_uuid');
+    document.querySelectorAll('.device-item').forEach(el => el.classList.remove('selected'));
+}
+
+// ==================== Control & Data Functions ====================
+async function sendDeviceAction() {
+    const uuid = document.getElementById('target_uuid').value.trim();
+    if (!uuid) { showToast('请先选择目标设备', 'warn'); return; }
+    
+    const command = document.getElementById('mqtt_cmd').value.trim();
+    if (!command) { showToast('请输入指令名称', 'warn'); return; }
+    
+    let params = {};
+    try {
+        const raw = document.getElementById('mqtt_params').value.trim() || '{}';
+        params = JSON.parse(raw);
+    } catch (e) {
+        showToast('Params JSON 格式错误', 'error'); return;
+    }
+    
+    await apiCall(`/api/v1/devices/${uuid}/actions`, 'POST', { command, params }, true);
+}
+
+async function shareDevice() {
+    const uuid = document.getElementById('target_uuid').value.trim();
+    if (!uuid) { showToast('请先选择目标设备', 'warn'); return; }
+    
+    const shared_with_uuid = document.getElementById('share_to_uuid').value.trim();
+    if (!shared_with_uuid) { showToast('请输入被分享用户 UUID', 'warn'); return; }
+    
+    const permission = document.getElementById('share_perm').value;
+    const expSec = parseInt(document.getElementById('share_exp').value) || 0;
+    const expires_at = expSec > 0 ? Math.floor(Date.now()/1000) + expSec : null;
+    
+    await apiCall(`/api/v1/devices/${uuid}/share`, 'POST', {
+        shared_with_uuid, permission, expires_at
+    }, true);
+}
+
+async function queryHistoryData() {
+    const uuid = document.getElementById('target_uuid').value.trim();
+    if (!uuid) { showToast('请先选择目标设备', 'warn'); return; }
+    
+    const start = parseInt(document.getElementById('hist_start').value);
+    const end = parseInt(document.getElementById('hist_end').value);
+    if (!start || !end || end <= start) {
+        showToast('请设置有效的时间范围', 'warn'); return;
+    }
+    
+    let properties = [];
+    try {
+        const raw = document.getElementById('hist_props').value.trim();
+        if (raw) properties = JSON.parse(raw);
+    } catch (e) {
+        showToast('Properties JSON 格式错误', 'error'); return;
+    }
+    
+    const limit = parseInt(document.getElementById('hist_limit').value) || 100;
+    const offset = parseInt(document.getElementById('hist_offset').value) || 0;
+    
+    await apiCall(`/api/v1/devices/${uuid}/getHistoryData`, 'POST', {
+        start_timestamp: start,
+        end_timestamp: end,
+        properties,
+        limit,
+        offset
+    }, true);
+}
+
+// ==================== Utility Functions ====================
+function log(message, type = 'info', data = null) {
+    const console = document.getElementById('console_out');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+    const method = data?.method?.toUpperCase() || '';
+    const status = data?.code || (type === 'success' ? 200 : type === 'error' ? 500 : 0);
+    
+    let statusClass = 'ok';
+    if (type === 'error') statusClass = 'err';
+    else if (type === 'warn') statusClass = 'warn';
+    
+    let content = '';
+    if (typeof data === 'object' && data !== null) {
+        content = JSON.stringify(data, null, 2);
+    } else if (data) {
+        content = String(data);
+    }
+    
+    entry.innerHTML = `
+        <div class="log-meta">
+            <span class="log-method ${method.toLowerCase()}">${method || 'SYS'}</span>
+            <span class="log-status ${statusClass}">${status || type.toUpperCase()}</span>
+            <span>${timeStr}</span>
+        </div>
+        <div class="log-content ${content ? 'json' : ''}">${escapeHtml(message)}${content ? '\n' + escapeHtml(content) : ''}</div>
+    `;
+    
+    console.insertBefore(entry, console.firstChild);
+    
+    // Update stats
+    const count = console.children.length;
+    document.getElementById('log_count').textContent = count;
+    document.getElementById('last_time').textContent = timeStr;
+    
+    // Auto-scroll to top (newest first)
+    console.scrollTop = 0;
+}
+
+function clearConsole() {
+    document.getElementById('console_out').innerHTML = 
+        '<div style="color:#666">// 日志已清除</div>';
+    document.getElementById('log_count').textContent = '0';
+    document.getElementById('last_time').textContent = '-';
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.className = `toast ${type}`;
+    toast.style.display = 'block';
+    
+    setTimeout(() => {
+        toast.style.display = 'none';
+    }, 3000);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+function clearStorage() {
+    if (confirm('确认清除所有本地缓存？(Token/设备记录)')) {
+        localStorage.clear();
+        location.reload();
+    }
+}
+</script>
+
+</body>
+</html>

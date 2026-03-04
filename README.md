@@ -15,17 +15,12 @@ export OMEGA3_IOT=omega3_iot
 go run main.go
 ```
 
-服务端口:
-- HTTP API: `:27015`
-- MQTT Broker: `tcp://yuyuko.food:1883`
 
 ## TODO Checklist
 
 ###  代码优化
 - [ ] **设备类型加载封装** - `LoadDeviceTypeFromYAML` 需要重构为通用加载器 [5](#1-4) 
-- [ ] **实例创建验证** - `NewInstanceFromConfig` 需要加上验证Hash [6](#1-5) 
-- [ ] **设备注册防刷** - `RegisterDeviceAnonymously` 需要添加频率限制 [7](#1-6)
-- [ ] **MQTT解耦** - `PublishActionToDevice` 需要解耦处理 [9](#1-8) 
+- [ ] **实例创建验证** - `NewInstanceFromConfig` 需要加上验证Hash [6](#1-5)
 - [ ] **MQTT重试机制** - 添加Retry Pool处理发送失败 [10](#1-9) 
 - [ ] **设备工厂实现** - `GetSupportedTypes` 方法待实现 [11](#1-10)
 - [ ] **VerifyCode加盐** - `GenerateVerifyCode` 需要添加salt [13](#1-12) 
@@ -38,9 +33,9 @@ go run main.go
 
 ## 开发规范 
 - 详情请查看Designstandard.md
+- API详情请查看APIStandard.md
 ## Notes
-
-项目目前处于开发阶段，核心功能已实现但需要优化和扩展。重点关注设备注册流程、MQTT通信和权限管理系统的完善。
+项目目前处于开发阶段，核心功能已实现但需要优化和扩展。
 
 Wiki pages you might want to explore:
 - [Device Lifecycle & Registration (ju1c3rSH/OMEGA3-IOT)](/wiki/ju1c3rSH/OMEGA3-IOT#5.1)
