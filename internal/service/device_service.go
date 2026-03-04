@@ -79,7 +79,7 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	if err != nil {
 		return nil, err
 	}
-	devicePath := fmt.Sprintf("root.mm1.device_data.%s", instanceUUID)
+	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", instanceUUID))
 	if properties == nil || len(properties) == 0 {
 		properties = make([]string, 0, len(instance.Properties.Items))
 		for propName := range instance.Properties.Items {
@@ -90,7 +90,10 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	for _, prop := range properties {
 		propertyPaths = append(propertyPaths, fmt.Sprintf("%s.%s", devicePath, prop))
 	}
-	sql := utils.ConvertHyphenIntoDash(fmt.Sprintf("SELECT %s FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d", strings.Join(properties, ", "), devicePath, startTimestamp, endTimestamp, limit, offset))
+	var tc utils.TimeConverter
+	startISO := tc.SecToISO(startTimestamp)
+	endIso := tc.SecToISO(endTimestamp)
+	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %s AND time <= %s ORDER BY time DESC LIMIT %d OFFSET %d", strings.Join(properties, ", "), devicePath, startISO, endIso, limit, offset)
 	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotdbClient.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
@@ -101,12 +104,11 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	for {
 		hasNext, err := sessionDataSet.Next()
 		if err != nil {
-			return nil, fmt.Errorf("failed to iterate result set: %w", err)
+			return nil, fmt.Errorf("failed to iteate result set: %w", err)
 		}
 		if !hasNext {
 			break
 		}
-
 		row, err := sessionDataSet.GetRowRecord()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get row record: %w", err)
