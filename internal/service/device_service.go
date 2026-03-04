@@ -90,8 +90,7 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	for _, prop := range properties {
 		propertyPaths = append(propertyPaths, fmt.Sprintf("%s.%s", devicePath, prop))
 	}
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d",
-		strings.Join(propertyPaths, ", "), devicePath, startTimestamp, endTimestamp, limit, offset)
+	sql := utils.ConvertHyphenIntoDash(fmt.Sprintf("SELECT %s FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d", strings.Join(properties, ", "), devicePath, startTimestamp, endTimestamp, limit, offset))
 	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotdbClient.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)

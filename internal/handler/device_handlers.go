@@ -259,7 +259,7 @@ func GetDeviceHistoryHandlerFactory(deviceService *service.DeviceService) gin.Ha
 			c.JSON(http.StatusUnauthorized, response)
 			return
 		}
-		userUUIDStr, ok := userUUID.(string)
+		_, ok := userUUID.(string)
 		if !ok {
 			response := types.NewErrorResponse(http.StatusUnauthorized, "Unauthorized: invalid user_uuid format", "")
 			c.JSON(http.StatusUnauthorized, response)
@@ -284,8 +284,8 @@ func GetDeviceHistoryHandlerFactory(deviceService *service.DeviceService) gin.Ha
 			c.JSON(http.StatusBadRequest, response)
 			return
 		}
-		//时间范围检查(最大30天=2592000 秒)
-		if input.EndTimestamp-input.StartTimestamp > 2592000 {
+
+		if input.EndTimestamp-input.StartTimestamp > 15552000 {
 			response := types.NewErrorResponse(http.StatusUnprocessableEntity, "Time range exceeds maximum allowed (30 days)", "")
 			c.JSON(http.StatusUnprocessableEntity, response)
 			return
@@ -299,7 +299,7 @@ func GetDeviceHistoryHandlerFactory(deviceService *service.DeviceService) gin.Ha
 		}
 
 		historyData, err := deviceService.GetDeviceHistoryData(
-			userUUIDStr,
+			instanceUUID,
 			input.StartTimestamp,
 			input.EndTimestamp,
 			input.Limit,
