@@ -68,7 +68,6 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 }
 func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp int64, endTimestamp int64, limit int, offset int, properties []string) (*[]model.DeviceHistoryData, error) {
 	//permission check
-
 	session, err := s.iotdbClient.SessionPool.GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
