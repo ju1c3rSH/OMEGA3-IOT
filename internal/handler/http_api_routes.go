@@ -2,6 +2,7 @@ package handler
 
 import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
+	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/service"
 	"time"
 
@@ -37,7 +38,7 @@ func Cors() gin.HandlerFunc {
 		c.Next()
 	}
 }
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, mqttService *service.MQTTService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, mqttService *service.MQTTService) {
 	rateLimiter := MiddleWares.NewRateLimiter(15, time.Minute)
 
 	v1 := router.Group("/api/v1", rateLimiter.RateLimitMiddleware())
@@ -98,6 +99,18 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 
 		deviceGroup.POST("/deviceRegisterAnon", DeviceRegisterAnonymouslyHandlerFactory(deviceService))
 
+	}
+
+	// Log routes
+	logGroup := v1.Group("/logs")
+	logGroup.Use(MiddleWares.JwtAuthMiddleWare())
+	{
+		// Device logs
+		logGroup.GET("/device", logHandler.QueryDeviceLogs)
+		logGroup.POST("/device/upload", logHandler.UploadDeviceLog)
+
+		// User logs
+		logGroup.GET("/user", logHandler.QueryUserLogs)
 	}
 
 }
