@@ -1,0 +1,41 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: OMEGA Build and Release
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build
+      run: GOOS=Linux GOARCH=amd64 go build -o iot-server -ldflags ="-w -s" VERSION=$(date +%Y%m%d%H%M%S)
+            
+    - name: Create Release
+      id: create_release
+      env: GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with: 
+          tag_name: v${{ github.run_number }} # 使用运行号作为版本号
+          name: Release v${{ github.run_number }}
+          draft: false
+          prerelease: false
+          files: |
+            my-iot-server-*
+          body: |
+            Auto build from commit ${{ github.sha }}
+    
+    - name: Test
+      run: go test -v ./...
