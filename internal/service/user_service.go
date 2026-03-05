@@ -111,8 +111,8 @@ func (s *UserService) GetUserInfoByID(userID uint) (*model.User, error) {
 func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, deviceNick string, deviceRemark string) (*model.Instance, error) {
 	var record model.DeviceRegistrationRecord
 	if err := s.mysqlDB.Where("reg_code = ? AND expires_at > ? AND is_bound = ?", regCode, time.Now().Unix(), false).First(&record).Error; err != nil {
-		fmt.Errorf("invalid or expired or used registration code: %w ,called up by user %w", err, userUUID)
-		return nil, fmt.Errorf("invalid or expired or used registration code: %w ,called up by user %w", err, userUUID) // 使用 wrap 保留原始错误信息
+		fmt.Errorf("invalid or expired or used registration code: %s ,called up by user %s", regCode, userUUID)
+		return nil, fmt.Errorf("invalid or expired or used registration code ,called up by user %s", userUUID) // 使用 wrap 保留原始错误信息
 	}
 	deviceType, exists := model.GlobalDeviceTypeManager.GetById(record.DeviceTypeID)
 	if !exists {
@@ -190,7 +190,7 @@ func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) err
 
 		historicalPath := fmt.Sprintf("root.mm1.device_data.%s.%s", instance.InstanceUUID, meta.Meta.Description)
 
-		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%s, ENCODING=%s, COMPRESSION=%s", historicalPath, dataType, encoding, compression)
+		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%d, ENCODING=%d, COMPRESSION=%d", historicalPath, dataType, encoding, compression)
 		status, err := s.iotDBClient.ExecuteNonQuery(sql)
 		if checkErr := s.iotDBClient.CheckError(status, err); err != nil {
 			return fmt.Errorf("[UserService] failed to create timeseries %s: %w,for %s", meta.Meta.Description, err, checkErr)
