@@ -29,3 +29,11 @@ func NewErrorResponse(code int, message string, errorDetails ...string) *Standar
 	}
 	return resp
 }
+func NewSuccessResponse(data interface{}) *StandardResponse {
+	return &StandardResponse{
+		Code:      200,
+		Message:   "Success",
+		Data:      data,
+		Timestamp: time.Now().Unix(),
+	}
+}

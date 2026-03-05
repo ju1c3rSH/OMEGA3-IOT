@@ -2,6 +2,7 @@ package service
 
 import (
 	"OMEGA3-IOT/internal/db"
+	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/utils"
@@ -17,6 +18,7 @@ type UserService struct {
 	instanceRepo           repository.InstanceRepository
 	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository
 	iotDBClient            *db.IOTDBClient
+	loggerService          logger.LoggerInterface
 }
 
 type GetUserAllDevicesResponse struct {
@@ -35,6 +37,7 @@ func NewUserService(
 	instanceRepo repository.InstanceRepository,
 	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository,
 	iotDBClient *db.IOTDBClient,
+	loggerService logger.LoggerInterface,
 ) *UserService {
 	return &UserService{
 		mqttSvc:                mqttSvc,
@@ -42,6 +45,7 @@ func NewUserService(
 		instanceRepo:           instanceRepo,
 		deviceRegistrationRepo: deviceRegistrationRepo,
 		iotDBClient:            iotDBClient,
+		loggerService:          loggerService,
 	}
 }
 
@@ -63,11 +67,14 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 	// Check if user already exists
 	_, err := s.userRepo.FindByUsername(username)
 	if err == nil {
+		// Log failed registration
+		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelWarning, "Registration failed: username already exists", logger.LogEventSystemError))
 		return nil, fmt.Errorf("username already exists")
 	}
 
 	hashedPassword, err := utils.HashPassword(password)
 	if err != nil {
+		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelPanic, "Registration failed: password hash error", logger.LogEventSystemError))
 		return nil, err
 	}
 
@@ -84,8 +91,14 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 	}
 
 	if err := s.userRepo.Create(user); err != nil {
+		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelPanic, "Registration failed: database error", logger.LogEventSystemError))
 		return nil, err
 	}
+
+	// Log successful registration
+	logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelInfo, "User registered successfully", logger.LogEventUserLogin)
+	logEvent.IPAddress = ip
+	s.loggerService.EmitUserLog(logEvent)
 
 	return user, nil
 }
@@ -93,15 +106,24 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 func (s *UserService) Login(username, password string, clientIP string) (string, *model.User, error) {
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
+		// Log failed login - user not found
+		logEvent := logger.NewUserLogEvent("", logger.LogLevelWarning, "Login failed: user not found", logger.LogEventUserLogin)
+		logEvent.IPAddress = clientIP
+		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("invalid credentials")
 	}
 
 	if !utils.CheckPasswordHash(password, user.PasswordHash) {
+		// Log failed login - wrong password
+		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: invalid password", logger.LogEventUserLogin)
+		logEvent.IPAddress = clientIP
+		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("invalid credentials")
 	}
 
 	token, err := utils.GenerateToken(user.UserName, user.UserUUID, user.Role)
 	if err != nil {
+		s.loggerService.EmitUserLog(logger.NewUserLogEvent(user.UserUUID, logger.LogLevelPanic, "Login failed: token generation error", logger.LogEventUserLogin))
 		return "", nil, err
 	}
 
@@ -113,6 +135,11 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 	if err := s.userRepo.UpdateFields(user.UserUUID, updates); err != nil {
 		log.Printf("Warning: failed to update user last_seen: %v", err)
 	}
+
+	// Log successful login
+	logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelInfo, "User logged in successfully", logger.LogEventUserLogin)
+	logEvent.IPAddress = clientIP
+	s.loggerService.EmitUserLog(logEvent)
 
 	return token, user, nil
 }
@@ -181,6 +208,18 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", *actionPayload); err != nil {
 		log.Printf("Warning: Failed to send enable_properties_upload action to device %s: %v", instance.InstanceUUID, err)
 	}
+
+	// Log successful device binding
+	logEvent := logger.NewUserLogEvent(userUUID, logger.LogLevelInfo,
+		fmt.Sprintf("Device bound successfully: %s (%s)", instance.InstanceUUID, instance.Name),
+		logger.LogEventUserDeviceBind)
+	logEvent.Metadata = map[string]interface{}{
+		"device_uuid": instance.InstanceUUID,
+		"device_name": instance.Name,
+		"device_type": instance.Type,
+		"reg_code":    regCode,
+	}
+	s.loggerService.EmitUserLog(logEvent)
 
 	return instance, nil
 }

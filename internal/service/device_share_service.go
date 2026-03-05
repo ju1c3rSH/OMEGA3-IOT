@@ -1,6 +1,7 @@
 package service
 
 import (
+	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
 	"fmt"
@@ -10,14 +11,16 @@ import (
 )
 
 type DeviceShareService struct {
-	instanceRepo     repository.InstanceRepository
-	deviceShareRepo  repository.DeviceShareRepository
+	instanceRepo    repository.InstanceRepository
+	deviceShareRepo repository.DeviceShareRepository
+	loggerService   logger.LoggerInterface
 }
 
-func NewDeviceShareService(db *gorm.DB) *DeviceShareService {
+func NewDeviceShareService(db *gorm.DB, loggerService logger.LoggerInterface) *DeviceShareService {
 	return &DeviceShareService{
 		instanceRepo:    repository.NewInstanceRepository(db),
 		deviceShareRepo: repository.NewDeviceShareRepository(db),
+		loggerService:   loggerService,
 	}
 }
 
@@ -55,11 +58,39 @@ func (s *DeviceShareService) ShareDevice(instanceUUID string, shareByUUID string
 		Permission:     permission,
 		Status:         repository.StatusActive,
 	}
-	return s.deviceShareRepo.Create(share)
+	if err := s.deviceShareRepo.Create(share); err != nil {
+		return err
+	}
+
+	logEvent := logger.NewUserLogEvent(shareByUUID, logger.LogLevelInfo,
+		fmt.Sprintf("Device shared: %s with user %s", instanceUUID, shareWithUUID),
+		logger.LogEventUserDeviceShare)
+	logEvent.Metadata = map[string]interface{}{
+		"instance_uuid":    instanceUUID,
+		"shared_with_uuid": shareWithUUID,
+		"permission":       permission,
+		"expires_at":       expiredTime,
+	}
+	s.loggerService.EmitUserLog(logEvent)
+
+	return nil
 }
 
-func (s *DeviceShareService) UnshareDevice(instanceUUID string, shareWithUUID string) error {
-	return s.deviceShareRepo.DeleteByInstanceAndSharedWith(instanceUUID, shareWithUUID)
+func (s *DeviceShareService) UnshareDevice(instanceUUID string, shareWithUUID string, sharedByUUID string) error {
+	if err := s.deviceShareRepo.DeleteByInstanceAndSharedWith(instanceUUID, shareWithUUID); err != nil {
+		return err
+	}
+
+	logEvent := logger.NewUserLogEvent(sharedByUUID, logger.LogLevelInfo,
+		fmt.Sprintf("Device unshared: %s from user %s", instanceUUID, shareWithUUID),
+		logger.LogEventUserDeviceUnshare)
+	logEvent.Metadata = map[string]interface{}{
+		"instance_uuid":    instanceUUID,
+		"shared_with_uuid": shareWithUUID,
+	}
+	s.loggerService.EmitUserLog(logEvent)
+
+	return nil
 }
 
 func (s *DeviceShareService) GetSharedDevices(instanceUUID string) ([]model.DeviceShare, error) {
