@@ -31,7 +31,7 @@ jobs:
         GOOS=linux GOARCH=amd64 go build \
           -o OMEGA3-IOT-$VERSION \
           -ldflags="-w -s -X main.Version=$VERSION" \
-          ./cmd/server
+          ./...
         # create a soft link of latest to make sure the server could download the latest version
         ln -sf OMEGA3-IOT-$VERSION my-iot-server-latest
         ls -la OMEGA3-IOT-*
