@@ -37,7 +37,7 @@ jobs:
         ln -sf OMEGA3-IOT-$VERSION my-iot-server-latest
         ls -la OMEGA3-IOT-*
 
-    - name: Create Release
+    - name: Create Releases
       id: create_release
       uses: softprops/action-gh-release@v1
       env:
