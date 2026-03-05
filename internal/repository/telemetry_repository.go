@@ -1,0 +1,183 @@
+package repository
+
+import (
+	"OMEGA3-IOT/internal/db"
+	"fmt"
+	"github.com/apache/iotdb-client-go/client"
+	"strings"
+	"time"
+)
+
+// TelemetryData represents a single telemetry data point
+type TelemetryData struct {
+	DeviceUUID   string
+	Measurements []string
+	Values       map[string]interface{}
+	Timestamp    int64
+}
+
+// TelemetryQueryResult represents the result of a telemetry query
+type TelemetryQueryResult struct {
+	Timestamp  int64
+	DeviceUUID string
+	Values     map[string]interface{}
+}
+
+type TelemetryRepository interface {
+	InsertTelemetry(deviceUUID string, measurements []string, values []interface{}, timestamp int64) error
+	BatchInsertTelemetry(telemetryData []TelemetryData) error
+	QueryTelemetry(deviceUUID string, startTime, endTime time.Time) ([]TelemetryData, error)
+	QueryLatestTelemetry(deviceUUID string) (TelemetryData, error)
+	CreateTimeseries(deviceUUID string, propertyNames []string, dataTypes []client.TSDataType) error
+}
+
+type iotdbTelemetryRepository struct {
+	client *db.IOTDBClient
+}
+
+func NewTelemetryRepository(client *db.IOTDBClient) TelemetryRepository {
+	return &iotdbTelemetryRepository{client: client}
+}
+
+func (r *iotdbTelemetryRepository) InsertTelemetry(deviceUUID string, measurements []string, values []interface{}, timestamp int64) error {
+	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
+	return r.client.InsertRecordTyped(devicePath, measurements, nil, values, timestamp)
+}
+
+func (r *iotdbTelemetryRepository) BatchInsertTelemetry(telemetryData []TelemetryData) error {
+	// Batch insert implementation
+	for _, data := range telemetryData {
+		// Convert map to slice based on measurements order
+		values := make([]interface{}, len(data.Measurements))
+		for i, m := range data.Measurements {
+			values[i] = data.Values[m]
+		}
+		if err := r.InsertTelemetry(data.DeviceUUID, data.Measurements, values, data.Timestamp); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, endTime time.Time) ([]TelemetryData, error) {
+	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
+	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC",
+		devicePath, startTime.UnixNano()/1e6, endTime.UnixNano()/1e6)
+
+	session, err := r.client.SessionPool.GetSession()
+	if err != nil {
+		return nil, err
+	}
+	defer r.client.SessionPool.PutBack(session)
+
+	dataSet, err := session.ExecuteQueryStatement(sql, &r.client.Config.IoTDB.QueryTimeoutMs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer dataSet.Close()
+
+	var results []TelemetryData
+	for {
+		hasNext, err := dataSet.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate result: %w", err)
+		}
+		if !hasNext {
+			break
+		}
+
+		record, err := dataSet.GetRowRecord()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get row record: %w", err)
+		}
+
+		timestamp := record.GetTimestamp()
+		values := make(map[string]interface{})
+		columnCount := dataSet.GetColumnCount()
+
+		for i := 0; i < columnCount; i++ {
+			columnName := dataSet.GetColumnName(i)
+			value := dataSet.GetValue(columnName)
+			// Extract property name from full path
+			parts := strings.Split(columnName, ".")
+			propName := parts[len(parts)-1]
+			values[propName] = value
+		}
+
+		results = append(results, TelemetryData{
+			DeviceUUID: deviceUUID,
+			Timestamp:  timestamp,
+			Values:     values,
+		})
+	}
+
+	return results, nil
+}
+
+func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (TelemetryData, error) {
+	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
+	sql := fmt.Sprintf("SELECT * FROM %s ORDER BY time DESC LIMIT 1", devicePath)
+
+	session, err := r.client.SessionPool.GetSession()
+	if err != nil {
+		return TelemetryData{}, err
+	}
+	defer r.client.SessionPool.PutBack(session)
+
+	dataSet, err := session.ExecuteQueryStatement(sql, &r.client.Config.IoTDB.QueryTimeoutMs)
+	if err != nil {
+		return TelemetryData{}, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer dataSet.Close()
+
+	hasNext, err := dataSet.Next()
+	if err != nil {
+		return TelemetryData{}, fmt.Errorf("failed to iterate result: %w", err)
+	}
+	if !hasNext {
+		return TelemetryData{}, fmt.Errorf("no data found for device %s", deviceUUID)
+	}
+
+	record, err := dataSet.GetRowRecord()
+	if err != nil {
+		return TelemetryData{}, fmt.Errorf("failed to get row record: %w", err)
+	}
+
+	timestamp := record.GetTimestamp()
+	values := make(map[string]interface{})
+	columnCount := dataSet.GetColumnCount()
+
+	for i := 0; i < columnCount; i++ {
+		columnName := dataSet.GetColumnName(i)
+		value := dataSet.GetValue(columnName)
+		parts := strings.Split(columnName, ".")
+		propName := parts[len(parts)-1]
+		values[propName] = value
+	}
+
+	return TelemetryData{
+		DeviceUUID: deviceUUID,
+		Timestamp:  timestamp,
+		Values:     values,
+	}, nil
+}
+
+func (r *iotdbTelemetryRepository) CreateTimeseries(deviceUUID string, propertyNames []string, dataTypes []client.TSDataType) error {
+	session, err := r.client.SessionPool.GetSession()
+	if err != nil {
+		return err
+	}
+	defer r.client.SessionPool.PutBack(session)
+
+	for i, propName := range propertyNames {
+		path := fmt.Sprintf("root.mm1.device_data.%s.%s", deviceUUID, propName)
+		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%s, ENCODING=PLAIN, COMPRESSOR=SNAPPY",
+			path, dataTypes[i])
+
+		status, err := session.ExecuteNonQueryStatement(sql)
+		if checkErr := r.client.CheckError(status, err); checkErr != nil {
+			return checkErr
+		}
+	}
+	return nil
+}
