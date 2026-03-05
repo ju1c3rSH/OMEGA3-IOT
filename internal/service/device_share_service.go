@@ -2,6 +2,7 @@ package service
 
 import (
 	"OMEGA3-IOT/internal/model"
+	"OMEGA3-IOT/internal/repository"
 	"fmt"
 	"gorm.io/gorm"
 	"log"
@@ -9,32 +10,42 @@ import (
 )
 
 type DeviceShareService struct {
-	mysqldb *gorm.DB
+	instanceRepo     repository.InstanceRepository
+	deviceShareRepo  repository.DeviceShareRepository
 }
 
-const (
-	StatusActive  = "active"
-	StatusRevoked = "revoked"
-)
-const (
-	PermissionRead      = "read"
-	PermissionWrite     = "write"
-	PermissionReadWrite = "read_write" // 或者 "readwrite"
-)
-
 func NewDeviceShareService(db *gorm.DB) *DeviceShareService {
-	return &DeviceShareService{mysqldb: db}
+	return &DeviceShareService{
+		instanceRepo:    repository.NewInstanceRepository(db),
+		deviceShareRepo: repository.NewDeviceShareRepository(db),
+	}
 }
 
 func (s *DeviceShareService) ShareDevice(instanceUUID string, shareByUUID string, shareWithUUID string, expiredTime int64, permission string) error {
-	var instance model.Instance
+	// Verify the user owns the device
+	_, err := s.instanceRepo.FindByUUID(instanceUUID)
+	if err != nil {
+		return fmt.Errorf("device not found: %w", err)
+	}
 
-	if err := s.mysqldb.Where("instance_uuid = ? AND owner_uuid = ?", instanceUUID, shareByUUID).First(&instance).Error; err != nil {
-		log.Println(err)
+	// Check ownership by querying with owner UUID
+	devices, err := s.instanceRepo.FindByOwnerUUID(shareByUUID)
+	if err != nil {
 		return err
 	}
 
-	share := model.DeviceShare{
+	found := false
+	for _, d := range devices {
+		if d.InstanceUUID == instanceUUID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("user does not own this device")
+	}
+
+	share := &model.DeviceShare{
 		InstanceUUID:   instanceUUID,
 		SharedByUUID:   shareByUUID,
 		SharedWithUUID: shareWithUUID,
@@ -42,120 +53,113 @@ func (s *DeviceShareService) ShareDevice(instanceUUID string, shareByUUID string
 		CreatedAt:      time.Now().Unix(),
 		UpdatedAt:      time.Now().Unix(),
 		Permission:     permission,
-		Status:         StatusActive,
+		Status:         repository.StatusActive,
 	}
-	return s.mysqldb.Create(&share).Error
+	return s.deviceShareRepo.Create(share)
 }
+
 func (s *DeviceShareService) UnshareDevice(instanceUUID string, shareWithUUID string) error {
-	var share model.DeviceShare
-	if err := s.mysqldb.Where("instance_uuid = ? AND shared_with_uuid = ?", instanceUUID, shareWithUUID).First(&share).Error; err != nil {
-		log.Println(err)
-	}
-	return s.mysqldb.Where("instance_uuid = ?", instanceUUID).Delete(&share).Error
+	return s.deviceShareRepo.DeleteByInstanceAndSharedWith(instanceUUID, shareWithUUID)
 }
+
 func (s *DeviceShareService) GetSharedDevices(instanceUUID string) ([]model.DeviceShare, error) {
-	var shares []model.DeviceShare
-	return shares, s.mysqldb.Where("instance_uuid = ?", instanceUUID).Find(&shares).Error
+	return s.deviceShareRepo.FindByInstanceUUID(instanceUUID)
 }
-func (s *DeviceShareService) GetSharedBy(instanceUUID string) ([]model.DeviceShare, error) {
-	var shares []model.DeviceShare
-	return shares, s.mysqldb.Where("shared_with_uuid = ?", instanceUUID).Find(&shares).Error
+
+func (s *DeviceShareService) GetSharedBy(sharedWithUUID string) ([]model.DeviceShare, error) {
+	return s.deviceShareRepo.FindBySharedWithUUID(sharedWithUUID)
 }
+
 func (s *DeviceShareService) GetSharedWith(instanceUUID string) ([]model.DeviceShare, error) {
-	var shares []model.DeviceShare
-	return shares, s.mysqldb.Where("instance_uuid = ?", instanceUUID).Find(&shares).Error
+	return s.deviceShareRepo.FindByInstanceUUID(instanceUUID)
 }
+
 func (s *DeviceShareService) GetAccessibleDevices(userUUID string) (*GetUserAllAccessibleDevicesResponse, error) {
-	var ownedDevices []model.Instance
-	s.mysqldb.Where("owner_uuid  = ?", userUUID).Find(&ownedDevices)
+	// Get owned devices
+	ownedDevices, err := s.instanceRepo.FindByOwnerUUID(userUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get shared devices
+	shares, err := s.deviceShareRepo.FindBySharedWithUUID(userUUID)
+	if err != nil {
+		return nil, err
+	}
 
 	var sharedDevices []model.Instance
+	now := time.Now().Unix()
+	for _, share := range shares {
+		// Check if share is active and not expired
+		if share.Status != repository.StatusActive {
+			continue
+		}
+		if share.ExpiresAt != nil && *share.ExpiresAt <= now {
+			continue
+		}
 
-	if err := s.mysqldb.
-		Table("instances").
-		Joins("JOIN device_shares ON device_shares.instance_uuid = instances.instance_uuid").
-		Where("device_shares.shared_with_uuid = ?", userUUID).
-		Where("device_shares.status = ?", StatusActive).
-		Where("(device_shares.expires_at IS NULL OR device_shares.expires_at > ?)", time.Now().Unix()).
-		Find(&sharedDevices).Error; err != nil {
-		return nil, fmt.Errorf("failed to query shared devices for user %s: %w", userUUID, err)
+		instance, err := s.instanceRepo.FindByUUID(share.InstanceUUID)
+		if err != nil {
+			log.Printf("Warning: failed to find instance %s: %v", share.InstanceUUID, err)
+			continue
+		}
+		sharedDevices = append(sharedDevices, *instance)
 	}
 
 	allAccessibleDevices := append(ownedDevices, sharedDevices...)
 	count := len(allAccessibleDevices)
+
 	for i := range allAccessibleDevices {
 		instanceUUID := allAccessibleDevices[i].InstanceUUID
-
-		var shareCount int64
-		err := s.mysqldb.Model(&model.DeviceShare{}).
-			Where("instance_uuid = ? AND status = ?", instanceUUID, StatusActive).
-			Where("(expires_at IS NULL OR expires_at > ?)", time.Now().Unix()).
-			Count(&shareCount).Error
-
+		shareCount, err := s.deviceShareRepo.CountActiveShares(instanceUUID)
 		if err != nil {
 			log.Printf("Warning: failed to count shares for device %s: %v", instanceUUID, err)
-			allAccessibleDevices[i].SharedCount = 0
-		} else {
-			allAccessibleDevices[i].SharedCount = int(shareCount)
+			shareCount = 0
 		}
-		allAccessibleDevices[i].IsShared = allAccessibleDevices[i].SharedCount > 0
+		allAccessibleDevices[i].SharedCount = int(shareCount)
+		allAccessibleDevices[i].IsShared = shareCount > 0
 	}
+
 	response := &GetUserAllAccessibleDevicesResponse{InstanceCount: count, Instances: allAccessibleDevices}
 	return response, nil
 }
 
 func (s *DeviceShareService) CheckDeviceAccess(instanceUUID string, userUUID string, requiredPermission string) (bool, error) {
-	var instance model.Instance
-	//Check if the owner of the instance
-	if err := s.mysqldb.Where("instance_uuid = ? AND owner_uuid = ? AND status = ?", instanceUUID, userUUID, StatusActive).
-		First(&instance).Error; err != nil {
-		log.Println(err)
-	} else {
-		return true, nil
+	// Check if the user owns the instance
+	devices, err := s.instanceRepo.FindByOwnerUUID(userUUID)
+	if err != nil {
+		return false, err
 	}
 
-	//Check the shared permission
-	var share model.DeviceShare
-	if err := s.mysqldb.Where("instance_uuid = ? AND shared_with_uuid = ?", instanceUUID, userUUID).
-		Where("expires_at IS NULL OR expires_at > ?", time.Now().Unix()).
-		First(&share).Error; err != nil {
-		log.Println(err)
+	for _, d := range devices {
+		if d.InstanceUUID == instanceUUID {
+			return true, nil
+		}
+	}
+
+	// Check the shared permission
+	share, err := s.deviceShareRepo.FindByInstanceAndSharedWith(instanceUUID, userUUID)
+	if err != nil {
 		return false, nil
 	}
 
-	if requiredPermission == PermissionRead && (share.Permission == PermissionRead || share.Permission == PermissionReadWrite) {
-		return true, nil
-
+	// Check if expired
+	if share.ExpiresAt != nil && *share.ExpiresAt <= time.Now().Unix() {
+		return false, nil
 	}
-	if requiredPermission == PermissionWrite && (share.Permission == PermissionWrite || share.Permission == PermissionReadWrite) {
+
+	if requiredPermission == repository.PermissionRead &&
+		(share.Permission == repository.PermissionRead || share.Permission == repository.PermissionReadWrite) {
+		return true, nil
+	}
+	if requiredPermission == repository.PermissionWrite &&
+		(share.Permission == repository.PermissionWrite || share.Permission == repository.PermissionReadWrite) {
 		return true, nil
 	}
 	return false, nil
 }
-func isValidStatus(status string) bool {
-	switch status {
-	case StatusActive:
-		return true
-	case StatusRevoked:
-		return true
-	default:
-		return false
-
-	}
-}
 
 func (s *DeviceShareService) calculateShareInfo(instanceUUID string) (int, bool, error) {
-	var shareCount int64
-	now := time.Now().Unix()
-	err := s.mysqldb.Model(&model.DeviceShare{}).
-		Where("instance_uuid = ? AND status = ?", instanceUUID, StatusActive).
-		Where("(expires_at IS NULL OR expires_at > ?)", now).
-		Count(&shareCount).Error
-	if err != nil {
-		return 0, false, err
-	}
-
-	count := int(shareCount)
-	isShared := count > 0
-	return count, isShared, nil
+	count, err := s.deviceShareRepo.CountActiveShares(instanceUUID)
+	return int(count), count > 0, err
 }

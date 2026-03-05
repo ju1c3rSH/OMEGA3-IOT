@@ -3,6 +3,7 @@ package service
 import (
 	"OMEGA3-IOT/internal/db"
 	"OMEGA3-IOT/internal/model"
+	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/utils"
 	"context"
 	"fmt"
@@ -15,35 +16,31 @@ import (
 )
 
 type DeviceService struct {
-	mysqlDB     *gorm.DB
-	iotdbClient *db.IOTDBClient
+	instanceRepo           repository.InstanceRepository
+	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository
+	iotDBClient            *db.IOTDBClient
+	db                     *gorm.DB // Kept for transaction support
 }
 
-func NewDeviceService(mysqlDB *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
+func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
 	return &DeviceService{
-		mysqlDB:     mysqlDB,
-		iotdbClient: iotDBClient,
+		instanceRepo:           repository.NewInstanceRepository(db),
+		deviceRegistrationRepo: repository.NewDeviceRegistrationRecordRepository(db),
+		iotDBClient:            iotDBClient,
+		db:                     db,
 	}
 }
-func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
 
+func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
 	if instance.Properties.Items == nil {
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
 	}
 	for key, value := range data {
 		valueCopy := value
 		va := valueCopy.Value
-		/*
-			// 修复：先初始化PropertyItem
-			if instance.Properties.Items[key] == nil {
-				instance.Properties.Items[key] = &model.PropertyItem{
-					Meta: value.Meta, // 保留原有的meta信息
-				}
-			}
-			这虽然可以解决，但是是下策
-		*/
+
 		if instance.Properties.Items[key] == nil {
-			return fmt.Errorf("Failed to update device %s: The key provided was not matched with the properties.", instance.InstanceUUID)
+			return fmt.Errorf("failed to update device %s: the key provided was not matched with the properties", instance.InstanceUUID)
 		}
 
 		instance.Properties.Items[key].Value = va
@@ -51,8 +48,8 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 	instance.LastSeen = time.Now().Unix()
 	instance.UpdatedAt = time.Now()
 	instance.Online = true
-	dbSession := s.mysqlDB.Session(&gorm.Session{})
-	if err := dbSession.Save(instance).Error; err != nil {
+
+	if err := s.instanceRepo.Update(&instance); err != nil {
 		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
 	}
 
@@ -66,18 +63,19 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 
 	return nil
 }
+
 func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp int64, endTimestamp int64, limit int, offset int, properties []string) (*[]model.DeviceHistoryData, error) {
-	//permission check
-	session, err := s.iotdbClient.SessionPool.GetSession()
+	session, err := s.iotDBClient.SessionPool.GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
-	defer s.iotdbClient.SessionPool.PutBack(session)
+	defer s.iotDBClient.SessionPool.PutBack(session)
 
 	instance, err := s.GetDeviceByInstanceUUID(instanceUUID)
 	if err != nil {
 		return nil, err
 	}
+
 	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", instanceUUID))
 	if properties == nil || len(properties) == 0 {
 		properties = make([]string, 0, len(instance.Properties.Items))
@@ -92,8 +90,11 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	var tc utils.TimeConverter
 	startISO := tc.SecToISO(startTimestamp)
 	endIso := tc.SecToISO(endTimestamp)
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %s AND time <= %s ORDER BY time DESC LIMIT %d OFFSET %d", strings.Join(properties, ", "), devicePath, startISO, endIso, limit, offset)
-	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotdbClient.Config.IoTDB.QueryTimeoutMs)
+
+	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %s AND time <= %s ORDER BY time DESC LIMIT %d OFFSET %d",
+		strings.Join(properties, ", "), devicePath, startISO, endIso, limit, offset)
+
+	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotDBClient.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -103,7 +104,7 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 	for {
 		hasNext, err := sessionDataSet.Next()
 		if err != nil {
-			return nil, fmt.Errorf("failed to iteate result set: %w", err)
+			return nil, fmt.Errorf("failed to iterate result set: %w", err)
 		}
 		if !hasNext {
 			break
@@ -153,29 +154,21 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 
 	return &historyData, nil
 }
+
 func (s *DeviceService) IsInstanceExists(instanceUUID string) (bool, error) {
-	if err := s.mysqlDB.Where("instance_uuid = ?", instanceUUID).Error; err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.instanceRepo.Exists(instanceUUID)
 }
+
 func (s *DeviceService) GetDeviceByInstanceUUID(instanceUUID string) (*model.Instance, error) {
-	var instance model.Instance
-	exists, err := s.IsInstanceExists(instanceUUID)
-	if err != nil && !exists {
-		return nil, err
-	}
-	if err := s.mysqlDB.Where("instance_uuid = ?", instanceUUID).First(&instance).Error; err != nil {
-		return nil, err
-	}
-	return &instance, nil
+	return s.instanceRepo.FindByUUID(instanceUUID)
 }
+
 func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode string) (*model.DeviceRegistrationRecord, error) {
 	_, valid := model.GlobalDeviceTypeManager.GetById(deviceTypeID)
 	if !valid {
-		return nil, gorm.ErrInvalidData
+		return nil, fmt.Errorf("invalid device type ID: %d", deviceTypeID)
 	}
-	//NewRegistrationRecord
+
 	hashedVerifyCode := utils.HashVerifyCode(verifyCode)
 	record, err := model.NewRegistrationRecord(deviceTypeID, hashedVerifyCode)
 	if err != nil {
@@ -184,60 +177,44 @@ func (s *DeviceService) RegisterDeviceAnonymously(deviceTypeID int, verifyCode s
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	_ = ctx
 
-	if err := s.mysqlDB.WithContext(ctx).Create(record).Error; err != nil {
-		// 判断是否为唯一键冲突（如设备名重复）
-		if err != nil && len(err.Error()) > 0 && (err.Error() == "UNIQUE constraint failed" || err.Error() == "duplicate key value violates unique constraint") {
-			return nil, gorm.ErrDuplicatedKey
-		}
-		return nil, err
+	if err := s.deviceRegistrationRepo.Create(record); err != nil {
+		return nil, fmt.Errorf("failed to create registration record: %w", err)
 	}
-	//TODO加上防刷
+
 	return record, nil
 }
 
 // AddDevice - Deprecated
 func (s *DeviceService) AddDevice(name string, deviceTypeID int, remark string, ownerUUID string) (*model.Instance, error) {
-	//这里因为没有verifyHash，而且通过deviceTypeID方法已经被启用，不建议使用。
 	deviceType, valid := model.GlobalDeviceTypeManager.GetById(deviceTypeID)
 	if !valid {
-		return nil, gorm.ErrInvalidData
+		return nil, fmt.Errorf("invalid device type ID: %d", deviceTypeID)
 	}
 
 	instance, err := model.NewInstanceFromConfig(name, ownerUUID, deviceType, "", remark, utils.GenerateUUID().String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device instance: %w", err)
 	}
-	// instance.Remark = remark
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	_ = ctx
 
-	if err := s.mysqlDB.WithContext(ctx).Create(instance).Error; err != nil {
-		// 判断是否为唯一键冲突（如设备名重复）
-		if err != nil && len(err.Error()) > 0 && (err.Error() == "UNIQUE constraint failed" || err.Error() == "duplicate key value violates unique constraint") {
-			return nil, gorm.ErrDuplicatedKey
-		}
-		return nil, err
+	if err := s.instanceRepo.Create(instance); err != nil {
+		return nil, fmt.Errorf("failed to create instance: %w", err)
 	}
 
 	return instance, nil
 }
 
 func (s *DeviceService) PropertiesToTelemetryData(instance *model.Instance) error {
-	measurements := make([]string, 0, len(instance.Properties.Items))
-	dataTypes := make([]client.TSDataType, 0, len(instance.Properties.Items))
-	values := make([]interface{}, 0, len(instance.Properties.Items))
-
-	for key, item := range instance.Properties.Items {
-		measurements = append(measurements, key)
-		values = append(values, item.Value)
-
-		dataType, _, _ := s.iotdbClient.MapConvertToIotDBType(item.Meta)
-		dataTypes = append(dataTypes, dataType)
-	}
+	// This method seems to be a preparation method, not actually saving data
+	// Kept for backward compatibility
 	return nil
 }
+
 func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Instance) error {
 	historicalDevicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", instance.InstanceUUID))
 
@@ -265,7 +242,7 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 			dataTypes = append(dataTypes, client.INT64)
 			values = append(values, intVal)
 		case "float", "single":
-			floatVal, err := strconv.ParseFloat(tempValue, 32) //解析为 float64，然后转换为 float32
+			floatVal, err := strconv.ParseFloat(tempValue, 32)
 			if err != nil {
 				return fmt.Errorf("failed to parse float property '%s' with value '%s': %w", propKey, tempValue, err)
 			}
@@ -289,24 +266,58 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 			dataTypes = append(dataTypes, client.BOOLEAN)
 			values = append(values, boolVal)
 		default:
-			//如果 Format未定义默认使用STRING
 			log.Printf("Warning: Unknown format '%s' for property '%s', treating as string.", propItem.Meta.Format, propKey)
 			dataTypes = append(dataTypes, client.STRING)
 			values = append(values, tempValue)
-
 		}
-
-		//values = append(values, propItem.Value)
-
-		//dataType, _, _ := s.iotdbClient.MapConvertToIotDBType(propItem.Meta)
-		//dataTypes = append(dataTypes, dataType)
 	}
 
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
-	if err := s.iotdbClient.InsertRecordTyped(historicalDevicePath, measurements, dataTypes, values, timestamp); err != nil {
+	if err := s.iotDBClient.InsertRecordTyped(historicalDevicePath, measurements, dataTypes, values, timestamp); err != nil {
 		return fmt.Errorf("[DeviceService] failed to save telemetry from instance %s to IoTDB: %w", instance.InstanceUUID, err)
 	}
 
 	return nil
+}
+
+// UpdateInstanceProperties updates device properties and saves to database
+func (s *DeviceService) UpdateInstanceProperties(instanceUUID string, properties model.Properties) error {
+	instance, err := s.instanceRepo.FindByUUID(instanceUUID)
+	if err != nil {
+		return err
+	}
+
+	instance.Properties = properties
+	instance.UpdatedAt = time.Now()
+	instance.LastSeen = time.Now().Unix()
+
+	return s.instanceRepo.Update(instance)
+}
+
+// UpdateInstanceOnlineStatus updates device online status
+func (s *DeviceService) UpdateInstanceOnlineStatus(instanceUUID string, online bool) error {
+	return s.instanceRepo.UpdateOnlineStatus(instanceUUID, online, time.Now().Unix())
+}
+
+// GetDevicesByOwner returns all devices owned by a user
+func (s *DeviceService) GetDevicesByOwner(ownerUUID string) ([]model.Instance, error) {
+	return s.instanceRepo.FindByOwnerUUID(ownerUUID)
+}
+
+// GetDeviceByUUIDAndVerifyHash retrieves a device by UUID and verifies the hash
+func (s *DeviceService) GetDeviceByUUIDAndVerifyHash(instanceUUID string, verifyHash string) (*model.Instance, error) {
+	instance, err := s.instanceRepo.FindByUUID(instanceUUID)
+	if err != nil {
+		return nil, err
+	}
+	if instance.VerifyHash != verifyHash {
+		return nil, fmt.Errorf("invalid verify hash")
+	}
+	return instance, nil
+}
+
+// UpdateDeviceProperties updates device properties (used by MQTT service)
+func (s *DeviceService) UpdateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
+	return s.updateDeviceProperties(instance, data)
 }

@@ -106,9 +106,8 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 	rawPropsData := message.Data.Properties
 	fmt.Printf("Properties Object: %+v\n", rawPropsData)
 
-	var instance model.Instance
-	dbSession := m.deviceService.mysqlDB.Session(&gorm.Session{})
-	if err := dbSession.Where("instance_uuid = ? AND verify_hash = ?", deviceUUID, hashedVerifyCode).First(&instance).Error; err != nil {
+	instance, err := m.deviceService.GetDeviceByUUIDAndVerifyHash(deviceUUID, hashedVerifyCode)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Printf("Unauthorized access attempt: No device found with UUID %s and provided verify code (hash: %s)", deviceUUID, hashedVerifyCode)
 		} else {
@@ -122,7 +121,7 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 		instance.Properties.Items = make(map[string]*model.PropertyItem)
 	}
 
-	if err := m.deviceService.updateDeviceProperties(instance, rawPropsData); err != nil {
+	if err := m.deviceService.UpdateDeviceProperties(*instance, rawPropsData); err != nil {
 		log.Printf("Failed to update device properties: %v", err)
 	}
 }
