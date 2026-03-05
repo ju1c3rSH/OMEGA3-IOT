@@ -1,6 +1,7 @@
 package service
 
 import (
+	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/utils"
 	"context"
@@ -16,8 +17,8 @@ import (
 
 type MQTTService struct {
 	broker        mqtt.Client
-	db            *gorm.DB
 	deviceService *DeviceService
+	loggerService logger.LoggerInterface
 }
 
 type DeviceMessage struct {
@@ -35,7 +36,7 @@ type Publisher interface {
 	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
 }
 
-func NewMQTTService(brokerURL string, deviceService *DeviceService) (*MQTTService, error) {
+func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface) (*MQTTService, error) {
 	options := mqtt.NewClientOptions()
 	options.AddBroker(brokerURL)
 
@@ -65,6 +66,7 @@ func NewMQTTService(brokerURL string, deviceService *DeviceService) (*MQTTServic
 	service := &MQTTService{
 		broker:        client,
 		deviceService: deviceService,
+		loggerService: loggerService,
 	}
 	service.setupSubscription()
 	return service, nil

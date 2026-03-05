@@ -3,6 +3,7 @@ package http_api
 import (
 	"OMEGA3-IOT/internal/config"
 	"OMEGA3-IOT/internal/handler"
+	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) error {
+func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -28,7 +29,7 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceHandler, deviceService, deviceShareService, mqttService)
+	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, mqttService)
 
 	log.Println("Starting server on :" + config.Server.Port)
 	return r.Run(":" + config.Server.Port)
