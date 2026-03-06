@@ -11,7 +11,6 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -19,7 +18,8 @@ type DeviceService struct {
 	instanceRepo           repository.InstanceRepository
 	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository
 	iotDBClient            *db.IOTDBClient
-	db                     *gorm.DB // Kept for transaction support
+	db                     *gorm.DB
+	iotDBRepo              repository.TelemetryRepository
 }
 
 func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
@@ -28,6 +28,7 @@ func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
 		deviceRegistrationRepo: repository.NewDeviceRegistrationRecordRepository(db),
 		iotDBClient:            iotDBClient,
 		db:                     db,
+		iotDBRepo:              repository.NewTelemetryRepository(iotDBClient),
 	}
 }
 
@@ -76,80 +77,51 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 		return nil, err
 	}
 
-	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", instanceUUID))
-	if properties == nil || len(properties) == 0 {
-		properties = make([]string, 0, len(instance.Properties.Items))
-		for propName := range instance.Properties.Items {
-			properties = append(properties, propName)
-		}
-	}
-	var propertyPaths []string
-	for _, prop := range properties {
-		propertyPaths = append(propertyPaths, fmt.Sprintf("%s.%s", devicePath, prop))
-	}
-	var tc utils.TimeConverter
-	startISO := tc.SecToISO(startTimestamp)
-	endIso := tc.SecToISO(endTimestamp)
-
-	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %s AND time <= %s ORDER BY time DESC LIMIT %d OFFSET %d",
-		strings.Join(properties, ", "), devicePath, startISO, endIso, limit, offset)
-
-	sessionDataSet, err := session.ExecuteQueryStatement(sql, &s.iotDBClient.Config.IoTDB.QueryTimeoutMs)
+	telemetry, err := s.iotDBRepo.QueryTelemetry(instanceUUID, startTimestamp, endTimestamp)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
+		return nil, err
 	}
-	defer sessionDataSet.Close()
+
 	var historyData []model.DeviceHistoryData
 
-	for {
-		hasNext, err := sessionDataSet.Next()
-		if err != nil {
-			return nil, fmt.Errorf("failed to iterate result set: %w", err)
+	for i := 0; i < len(telemetry.Values); i++ {
+		measurement := telemetry.Measurements[i]
+
+		value, ok := telemetry.Values[measurement]
+		if !ok {
+			value = "unknown value"
 		}
-		if !hasNext {
-			break
+
+		valStr := ""
+		if value != nil {
+			valStr = fmt.Sprintf("%v", value)
 		}
-		row, err := sessionDataSet.GetRowRecord()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get row record: %w", err)
-		}
-		timestamp := row.GetTimestamp()
-		currentTsSec := timestamp / 1000
+
 		var properties model.Properties
 		properties.Items = make(map[string]*model.PropertyItem)
 
-		columnCount := sessionDataSet.GetColumnCount()
-		for i := 0; i < columnCount; i++ {
-			columnName := sessionDataSet.GetColumnName(i)
-			val := sessionDataSet.GetValue(columnName)
+		instanceProp, propExists := instance.Properties.Items[measurement]
 
-			parts := strings.Split(columnName, ".")
-			propName := parts[len(parts)-1]
-			valStr := ""
-			if val != nil {
-				valStr = fmt.Sprintf("%v", val)
+		if !propExists {
+			properties.Items[measurement] = &model.PropertyItem{
+				Value: valStr,
+				Meta: model.PropertyMeta{
+					Description: "Unknown Prop",
+					Format:      "string",
+				},
 			}
-
-			meta, ok := instance.Properties.Items[propName]
-			if !ok {
-				meta = &model.PropertyItem{
-					Value: valStr,
-					Meta: model.PropertyMeta{
-						Description: "Unknown Property",
-						Format:      "string",
-					},
-				}
-			} else {
-				meta.Value = valStr
-			}
-			properties.Items[propName] = meta
+		} else {
+			propCopy := *instanceProp
+			propCopy.Value = valStr
+			properties.Items[measurement] = &propCopy
 		}
 
-		record := model.DeviceHistoryData{
-			Timestamp:  currentTsSec,
+		historyItem := model.DeviceHistoryData{
+			Timestamp:  telemetry.Timestamp,
 			Properties: properties,
 		}
-		historyData = append(historyData, record)
+
+		historyData = append(historyData, historyItem)
 	}
 
 	return &historyData, nil
@@ -158,7 +130,6 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 func (s *DeviceService) IsInstanceExists(instanceUUID string) (bool, error) {
 	return s.instanceRepo.Exists(instanceUUID)
 }
-
 func (s *DeviceService) GetDeviceByInstanceUUID(instanceUUID string) (*model.Instance, error) {
 	return s.instanceRepo.FindByUUID(instanceUUID)
 }

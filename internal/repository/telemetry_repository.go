@@ -2,10 +2,10 @@ package repository
 
 import (
 	"OMEGA3-IOT/internal/db"
+	"OMEGA3-IOT/internal/utils"
 	"fmt"
 	"github.com/apache/iotdb-client-go/client"
 	"strings"
-	"time"
 )
 
 // TelemetryData represents a single telemetry data point
@@ -26,8 +26,8 @@ type TelemetryQueryResult struct {
 type TelemetryRepository interface {
 	InsertTelemetry(deviceUUID string, measurements []string, values []interface{}, timestamp int64) error
 	BatchInsertTelemetry(telemetryData []TelemetryData) error
-	QueryTelemetry(deviceUUID string, startTime, endTime time.Time) ([]TelemetryData, error)
-	QueryLatestTelemetry(deviceUUID string) (TelemetryData, error)
+	QueryTelemetry(deviceUUID string, startTime, endTime int64) (*TelemetryData, error)
+	QueryLatestTelemetry(deviceUUID string) (*TelemetryData, error)
 	CreateTimeseries(deviceUUID string, propertyNames []string, dataTypes []client.TSDataType) error
 }
 
@@ -40,7 +40,7 @@ func NewTelemetryRepository(client *db.IOTDBClient) TelemetryRepository {
 }
 
 func (r *iotdbTelemetryRepository) InsertTelemetry(deviceUUID string, measurements []string, values []interface{}, timestamp int64) error {
-	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
+	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", deviceUUID))
 	return r.client.InsertRecordTyped(devicePath, measurements, nil, values, timestamp)
 }
 
@@ -59,10 +59,11 @@ func (r *iotdbTelemetryRepository) BatchInsertTelemetry(telemetryData []Telemetr
 	return nil
 }
 
-func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, endTime time.Time) ([]TelemetryData, error) {
-	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
-	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC",
-		devicePath, startTime.UnixNano()/1e6, endTime.UnixNano()/1e6)
+func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, endTime int64) (*TelemetryData, error) {
+	var tc utils.TimeConverter
+	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", deviceUUID))
+	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %s AND time <= %s ORDER BY time DESC",
+		devicePath, tc.SecToISO(startTime), tc.SecToISO(endTime))
 
 	session, err := r.client.SessionPool.GetSession()
 	if err != nil {
@@ -76,7 +77,7 @@ func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, 
 	}
 	defer dataSet.Close()
 
-	var results []TelemetryData
+	var results TelemetryData
 	for {
 		hasNext, err := dataSet.Next()
 		if err != nil {
@@ -94,53 +95,56 @@ func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, 
 		timestamp := record.GetTimestamp()
 		values := make(map[string]interface{})
 		columnCount := dataSet.GetColumnCount()
-
+		var parts, propNames []string
 		for i := 0; i < columnCount; i++ {
+
 			columnName := dataSet.GetColumnName(i)
-			value := dataSet.GetValue(columnName)
-			// Extract property name from full path
-			parts := strings.Split(columnName, ".")
+			parts = strings.Split(columnName, ".")
 			propName := parts[len(parts)-1]
+
+			value := dataSet.GetValue(columnName)
+			propNames = append(propNames, propName)
 			values[propName] = value
 		}
 
-		results = append(results, TelemetryData{
-			DeviceUUID: deviceUUID,
-			Timestamp:  timestamp,
-			Values:     values,
-		})
+		results = TelemetryData{
+			DeviceUUID:   deviceUUID,
+			Timestamp:    timestamp,
+			Values:       values,
+			Measurements: propNames,
+		}
 	}
 
-	return results, nil
+	return &results, nil
 }
 
-func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (TelemetryData, error) {
-	devicePath := fmt.Sprintf("root.mm1.device_data.%s", deviceUUID)
+func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (*TelemetryData, error) {
+	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", deviceUUID))
 	sql := fmt.Sprintf("SELECT * FROM %s ORDER BY time DESC LIMIT 1", devicePath)
 
 	session, err := r.client.SessionPool.GetSession()
 	if err != nil {
-		return TelemetryData{}, err
+		return &TelemetryData{}, err
 	}
 	defer r.client.SessionPool.PutBack(session)
 
 	dataSet, err := session.ExecuteQueryStatement(sql, &r.client.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
-		return TelemetryData{}, fmt.Errorf("failed to execute query: %w", err)
+		return &TelemetryData{}, fmt.Errorf("failed to execute query: %w", err)
 	}
 	defer dataSet.Close()
 
 	hasNext, err := dataSet.Next()
 	if err != nil {
-		return TelemetryData{}, fmt.Errorf("failed to iterate result: %w", err)
+		return &TelemetryData{}, fmt.Errorf("failed to iterate result: %w", err)
 	}
 	if !hasNext {
-		return TelemetryData{}, fmt.Errorf("no data found for device %s", deviceUUID)
+		return &TelemetryData{}, fmt.Errorf("no data found for device %s", deviceUUID)
 	}
 
 	record, err := dataSet.GetRowRecord()
 	if err != nil {
-		return TelemetryData{}, fmt.Errorf("failed to get row record: %w", err)
+		return &TelemetryData{}, fmt.Errorf("failed to get row record: %w", err)
 	}
 
 	timestamp := record.GetTimestamp()
@@ -155,7 +159,7 @@ func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (Tele
 		values[propName] = value
 	}
 
-	return TelemetryData{
+	return &TelemetryData{
 		DeviceUUID: deviceUUID,
 		Timestamp:  timestamp,
 		Values:     values,
