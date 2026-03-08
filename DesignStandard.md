@@ -1,935 +1,260 @@
-# OMEGA3-IOT 项目开发规范
+# OMEGA3-IOT 设计规范
 
-## 1. 概述
+## 1. 核心原则
 
-### 1.1 设计原则
+- **配置驱动**: 设备类型、系统行为通过 YAML 配置
+- **依赖注入**: 服务间通过构造函数注入，避免全局状态
+- **接口隔离**: Repository/Service 面向接口编程
+- **错误透明**: 错误逐层包裹，保留完整上下文
+
+## 2. 项目结构
 
 ```
-    - **安全性优先**：所有敏感数据加密存储，通信过程全程认证
-    - **可扩展性**：设备类型通过YAML配置管理，支持动态扩展
-    - **一致性**：统一的命名规范、数据格式和错误处理机制
-    - **解耦设计**：HTTP API、MQTT服务、数据库层完全解耦
+OMEGA3-IOT/
+├── cmd/                    # 程序入口
+│   └── http-api/           # HTTP API 服务
+├── internal/
+│   ├── config/             # 配置加载
+│   ├── db/                 # 数据库连接
+│   ├── eventbus/           # 内部事件总线
+│   ├── handler/            # HTTP 处理器
+│   │   └── middlewares/    # Gin 中间件
+│   ├── logger/             # 日志服务
+│   ├── model/              # 数据模型
+│   ├── repository/         # 数据访问层
+│   ├── service/            # 业务逻辑层
+│   ├── types/              # 共享类型定义
+│   └── utils/              # 工具函数
+├── internal/config/        # 配置文件目录
+│   ├── device_type_list.yaml
+│   └── GeneralConfig.yaml
+└── main.go
 ```
 
-## 2. 数据模型
+## 3. 数据模型
 
-### 2.1 用户模型 (User)
+### 3.1 Instance (设备实例)
 
-#### 字段定义
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| InstanceUUID | string | 设备唯一标识 (UUID v4) |
+| Name | string | 设备名称 |
+| Type | string | 设备类型名称 |
+| Online | bool | 在线状态 |
+| OwnerUUID | string | 所有者 UUID |
+| Properties | Properties | 当前属性值 (JSON) |
+| VerifyHash | string | 设备认证哈希 |
+| Status | string | active/inactive |
 
-| 字段名          | 类型        | 描述      | 约束              |
-|--------------|-----------|---------|-----------------|
-| ID           | uint      | 主键      | 自增              |
-| UserUUID     | string    | 用户唯一标识符 | UUID v4 格式，36字符 |
-| UserName     | string    | 用户名     | 唯一索引，3-20字符     |
-| Type         | int       | 用户类型    | -               |
-| Online       | bool      | 在线状态    | -               |
-| Description  | string    | 用户描述    | -               |
-| LastSeen     | int64     | 最后活跃时间  | Unix时间戳         |
-| IP           | string    | 用户IP地址  | -               |
-| PasswordHash | string    | 密码哈希值   | bcrypt加密        |
-| CreatedAt    | time.Time | 创建时间    | -               |
-| UpdatedAt    | time.Time | 更新时间    | -               |
-| Role         | string    | 角色      | 带索引             |
-| Status       | string    | 状态      | 带索引             |
+### 3.2 DeviceRegistrationRecord (注册记录)
 
-#### 密码管理方法
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| DeviceUUID | string | 预分配设备 UUID |
+| RegCode | string | 8位注册码 (用户绑定用) |
+| VerifyHash | string | VerifyCode 的 SHA-256 哈希 |
+| ExpiresAt | int64 | 过期时间 (24小时) |
+| IsBound | bool | 是否已绑定 |
 
-- `SetPassword(password string)`: 使用bcrypt(cost=14)加密密码
-- `CheckPassword(password string) bool`: 验证密码，返回布尔值
+### 3.3 DeviceShare (设备分享)
 
-### 2.2 设备模型
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| InstanceUUID | string | 被分享设备 |
+| SharedWithUUID | string | 被分享用户 |
+| Permission | string | read/write/read_write |
+| ExpiresAt | *int64 | 过期时间 (nil=永不过期) |
 
-#### 2.2.1 Instance (正式设备实例)
-
-| 字段名          | 类型         | 描述      | 约束             |
-|--------------|------------|---------|----------------|
-| ID           | uint       | 主键      | -              |
-| InstanceUUID | string     | 设备唯一标识符 | UUID v4 格式     |
-| Name         | string     | 设备名称    | -              |
-| Type         | int        | 设备类型ID  | 外键关联DeviceType |
-| Online       | bool       | 在线状态    | -              |
-| OwnerUUID    | string     | 所有者UUID | 外键关联User       |
-| Description  | string     | 描述信息    | -              |
-| AddTime      | int64      | 添加时间    | Unix时间戳        |
-| LastSeen     | int64      | 最后上线时间  | Unix时间戳        |
-| Properties   | Properties | 属性集合    | JSON格式存储       |
-| CreatedAt    | time.Time  | 创建时间    | -              |
-| UpdatedAt    | time.Time  | 更新时间    | -              |
-| VerifyHash   | string     | 验证码哈希值  | SHA-256哈希      |
-| SN           | string     | 序列号     | 可选             |
-| Remark       | string     | 备注信息    | -              |
-
-#### 2.2.2 DeviceRegistrationRecord (临时注册记录)
-
-| 字段名          | 类型        | 描述      | 约束         |
-|--------------|-----------|---------|------------|
-| ID           | uint      | 主键      | -          |
-| DeviceUUID   | string    | 设备唯一标识符 | UUID v4 格式 |
-| RegCode      | string    | 注册码     | 8位随机字符串    |
-| DeviceTypeID | int       | 设备类型ID  | -          |
-| SN           | string    | 序列号     | 可选         |
-| VerifyHash   | string    | 验证码哈希值  | SHA-256哈希  |
-| CreatedAt    | time.Time | 创建时间    | -          |
-| ExpiresAt    | time.Time | 过期时间    | 带索引，24小时过期 |
-| IsBound      | bool      | 是否已绑定   | 带索引        |
-
-#### 2.2.3 DeviceType (设备类型定义)
-
-| 字段名         | 类型                      | 描述      |
-|-------------|-------------------------|---------|
-| ID          | int                     | 类型ID    |
-| Name        | string                  | 类型名称    |
-| Description | string                  | 描述      |
-| Properties  | map[string]PropertyMeta | 属性元数据映射 |
-
-### 2.3 属性模型
-
-#### 2.3.1 Properties 结构
+### 3.4 Properties (属性系统)
 
 ```go
 type Properties struct {
-Items map[string]PropertyItem `json:"items"`
+    Items map[string]*PropertyItem `json:"items"`
 }
 
 type PropertyItem struct {
-Value string    `json:"value"`
-Meta  PropertyMeta `json:"meta"`
+    Value string       `json:"value"`
+    Meta  PropertyMeta `json:"meta"`
 }
-```
 
-**数据库存储**：实现GORM的Value()和Scan()方法，自动序列化/反序列化为JSON
-
-#### 2.3.2 PropertyMeta 规范
-
-```go
 type PropertyMeta struct {
-Writable    bool     `json:"writable"`
-Description string   `json:"description"`
-Unit        string   `json:"unit,omitempty"`
-Range       []int    `json:"range,omitempty"`
-Format      string   `json:"format,omitempty"` // string/int/float/bool
-Enum        []string `json:"enum,omitempty"`
-Required    bool     `json:"required,omitempty"` // TODO: 需要实现
-Type        string   `json:"type,omitempty"`     // TODO: 需要实现
+    Writable    bool     `json:"writable"`    // 是否可写
+    Description string   `json:"description"` // 描述
+    Unit        string   `json:"unit"`        // 单位
+    Range       []int    `json:"range"`       // 取值范围
+    Format      string   `json:"format"`      // string/int/float/bool
+    Enum        []string `json:"enum"`        // 枚举值
 }
 ```
 
-### 2.4 消息模型
+## 4. 通信协议
 
-#### 2.4.1 DeviceMessage (MQTT消息顶层结构)
-
-```go
-type DeviceMessage struct {
-VerifyCode string          `json:"verify_code"`
-TimeStamp  int64           `json:"timestamp"`
-Data       MessageData     `json:"data"`
-}
-
-type MessageData struct {
-Properties map[string]interface{} `json:"properties,omitempty"`
-Event      interface{}            `json:"event,omitempty"`
-}
-```
-
-#### 2.4.2 Action 模型
-
-```go
-type Action struct {
-Command   string                 `json:"command"`
-Params    map[string]interface{} `json:"params"`
-Timestamp int64                  `json:"timestamp"`
-}
-```
-
-## 3. 通信协议
-
-### 3.1 JSON 字段命名规范
-
-- **所有 JSON 字段名使用小写字母**
-- **不同单词间使用下划线 `_` 分割**
-- **保持一致性，避免混用驼峰命名**
-
-✅ 正确示例：
+### 4.1 MQTT 主题规范
 
 ```
-OwnerUUID    string `json:"owner_uuid"`
-InstanceUUID string `json:"instance_uuid"`
-AddTime      int    `json:"add_time"`
-LastSeen     int    `json:"last_seen"`
+data/device/{instance_uuid}/
+├── properties    # 设备 → 服务器：属性上报 (QoS 1)
+├── event         # 设备 → 服务器：事件通知 (QoS 1)
+└── action        # 服务器 → 设备：指令下发 (QoS 1)
 ```
 
-### 3.2 MQTT 通信
+### 4.2 属性上报格式
 
-#### 3.2.1 主题结构规范
-```
-data/device/{device_uuid}/
-├── properties  # 设备属性上报
-├── event       # 设备事件通知  
-└── action      # 服务器动作下发
-```
-
-#### 3.2.2 Properties 上报格式
-
-**Topic**: `data/device/{device_uuid}/properties`
-
-**Payload**:
 ```json
 {
   "verify_code": "tOFX*mc8=V}?Cnh2",
   "timestamp": 1756882749,
   "data": {
     "properties": {
-      "gps_location": {
-        "meta": {
-          "writable": false,
-          "description": "GPS位置",
-          "format": "string"
-        },
-        "value": "39.9042,116.4074"
-      },
       "battery_level": {
-        "meta": {
-          "writable": true,
-          "description": "电量",
-          "unit": "%",
-          "range": [
-            0,
-            100
-          ],
-          "format": "int"
-        },
-        "value": "85"
+        "value": "85",
+        "meta": { ... }
       }
     }
   }
 }
 ```
 
-#### 3.2.3 Action 下发格式
+### 4.3 指令下发格式
 
-**Topic**: `data/device/{device_uuid}/action`
-
-**Payload**:
 ```json
 {
-  "command": "enable_properties_upload",
-  "params": {
-    "interval_sec": 30
-  },
+  "command": "set_upload_interval",
+  "params": { "interval_sec": 30 },
   "timestamp": 1729450800
 }
 ```
 
-#### 3.2.4 设备认证机制
+## 5. 设备注册流程
 
-- **认证方式**：使用VerifyCode进行身份验证
-- **验证流程**：
-    1. 设备上报数据时携带明文VerifyCode
-    2. 服务器计算SHA-256哈希值
-    3. 与数据库中存储的VerifyHash比对
-    4. 匹配成功则处理请求，否则拒绝
-***
+```
+阶段1: 匿名注册 (设备端)
+  POST /api/v1/device/deviceRegisterAnon
+  ← 返回 {uuid, reg_code, verify_code}
 
-### 3.3 HTTP API
-
-系统遵循 RESTful 风格设计，所有 API 均位于 `/api/v1` 路径下。接口采用 JSON 格式进行数据交互，包含标准的响应封装（Code, Message, Data）。
-
-#### 3.3.1 公开端点（无需认证）
-
-这些接口主要用于系统检测、用户注册登录以及设备的首次匿名注册。
-
-| 端点 | 方法 | 描述 | 请求参数示例 |
-| :--- | :--- | :--- | :--- |
-| `/api/v1/test` | GET | 系统连通性测试 | `?msg=ping` |
-| `/api/v1/health` | GET | 健康检查 | - |
-| `/api/v1/users/register` | POST | 用户注册 | `{"username": "admin", "password": "123"}` |
-| `/api/v1/users/login` | POST | 用户登录（获取 Token） | `{"username": "admin", "password": "123"}` |
-| `/api/v1/device/deviceRegisterAnon` | POST | 设备匿名注册（获取 RegCode） | `{"device_type_id": 1}` |
-
-#### 3.3.2 受保护端点（需要 JWT 认证）
-
-访问以下接口需要在 HTTP Header 中携带 `Authorization: Bearer <token>`。
-
-**1. 用户与设备管理 (User Scope)**
-
-| 端点 | 方法 | 描述 |
-| :--- | :--- | :--- |
-| `/api/v1/users/info` | GET | 获取当前用户信息 |
-| `/api/v1/users/getUserAllDevices` | GET | 获取当前用户绑定的所有设备列表 |
-| `/api/v1/users/addDevice` | POST | 直接添加设备（无需 RegCode） |
-| `/api/v1/users/bindDeviceByRegCode` | POST | 通过 RegCode 将匿名设备绑定到用户 |
-
-**2. 设备控制与共享 (Device Scope)**
-
-| 端点 | 方法   | 描述 | 权限要求 |
-| :--- |:-----| :--- | :--- |
-| `/api/v1/devices/accessible` | GET  | 获取所有可访问设备（自有 + 他人分享） | - |
-| `/api/v1/devices/:instance_uuid/actions` | POST | 发送 MQTT 控制指令 | write |
-| `/api/v1/devices/:instance_uuid/share` | POST | 分享设备给其他用户 | write |
-|`/api/v1/devices/:instance_uuid/getHistoryData` | POST |获取设备的历史数据| read|
-#### 3.3.3 关键响应示例
-
-以下示例展示了核心业务流程的 JSON 响应结构。
-
-**1. 用户注册响应 (`POST /users/register`)**
-
-```json
-{
-  "code": 201,
-  "message": "User created successfully",
-  "data": {
-    "id": 101,
-    "username": "iot_admin",
-    "role": "standard",
-    "created_at": "2026-01-10T08:00:00Z",
-    "last_seen": "2026-01-10T08:00:00Z",
-    "last_ip": "127.0.0.1"
-  }
-}
+阶段2: 用户绑定 (App端)
+  POST /api/v1/users/bindDeviceByRegCode
+  Body: {reg_code, device_nick}
+  ← 设备激活，MQTT 下发 GO_ON 指令
 ```
 
-**2. 用户登录响应 (`POST /users/login`)**
+## 6. 开发规范
 
-```json
-{
-  "code": 200,
-  "message": "Login successful",
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "user": {
-      "id": 101,
-      "username": "iot_admin",
-      "role": "standard"
+### 6.1 命名规则
+
+| 场景 | 规范 | 示例 |
+|------|------|------|
+| JSON 字段 | 小写 + 下划线 | `instance_uuid` |
+| Go 结构体 | 大驼峰 | `InstanceUUID` |
+| 数据库列 | 小写 + 下划线 | `instance_uuid` |
+| 常量 | 大驼峰 | `DefaultTimeout` |
+| 接口 | 动词 + er | `UserRepository` |
+
+### 6.2 错误处理
+
+```go
+// 错误包装，保留上下文
+if err := db.Create(&instance).Error; err != nil {
+    return fmt.Errorf("create instance failed: %w", err)
+}
+
+// HTTP 层统一响应
+c.JSON(http.StatusInternalServerError, response.Error(
+    http.StatusInternalServerError,
+    "Failed to create device",
+))
+```
+
+### 6.3 服务初始化
+
+```go
+// 依赖注入模式
+func NewUserService(
+    mqtt *service.MQTTService,
+    userRepo repository.UserRepository,
+    // ...
+) *UserService {
+    return &UserService{
+        mqtt: mqtt,
+        userRepo: userRepo,
     }
-  }
 }
 ```
 
-**3. 设备匿名注册响应 (`POST /device/deviceRegisterAnon`)**
+## 7. 数据库设计
 
-此接口由设备在出厂或重置后调用，返回关键的注册码与校验码。
-
-```json
-{
-  "code": 200,
-  "message": "Device Registered successfully",
-  "data": {
-    "device": {
-      "id": 154,
-      "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
-      "reg_code": "A0WU@HG6",
-      "verify_code": "tOFX*mc8=V}?Cnh2",
-      "type": 1,
-      "expires_at": 1760858932
-    }
-  }
-}
-```
-*字段说明：*
-*   `reg_code`: 8位用户注册码，用户在 App端输入此码绑定设备。
-*   `verify_code`: 设备端保存的校验凭证，用于 MQTT 连接鉴权（仅首次返回明文）。
-
-**4. 绑定设备响应 (`POST /users/bindDeviceByRegCode`)**
-
-```json
-{
-  "code": 201,
-  "message": "Device created successfully",
-  "data": {
-    "device": {
-      "id": 154,
-      "uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
-      "name": "Living Room Sensor",
-      "type": 1,
-      "online": false,
-      "description": "Temperature sensor",
-      "remark": "Installed near window",
-      "created_at": 1704873600,
-      "last_seen": 1704873600,
-      "properties": {}
-    }
-  }
-}
-```
-
-# 5.获取设备历史数据 API 规范
-
-## 1. 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| **接口路径** | `/api/v1/devices/:instance_uuid/getHistoryData` |
-| **请求方法** | `POST` |
-| **认证方式** | JWT Token (Bearer) |
-| **权限要求** | `read` (设备读取权限) |
-| **Content-Type** | `application/json` |
-
----
-
-## 2. 请求体参数
-
-```json
-{
-  "start_timestamp": 1704067200,
-  "end_timestamp": 1704153600,
-  "properties": ["battery_level", "gps_location"],
-  "limit": 1000,
-  "offset": 0
-}
-```
-
-| 参数名 | 类型 | 必填 | 默认值 | 描述 |
-|--------|------|------|--------|------|
-| `start_timestamp` | int64 | 是 | - | 起始时间 (Unix 时间戳，秒) |
-| `end_timestamp` | int64 | 是 | - | 结束时间 (Unix 时间戳，秒) |
-| `properties` | []string | 否 | 全部属性 | 需要查询的属性列表 |
-| `limit` | int | 否 | 1000 | 单次返回最大记录数 |
-| `offset` | int | 否 | 0 | 分页偏移量 |
-
----
-
-## 3. 参数约束
-
-| 约束项 | 规则 |
-|--------|------|
-| **时间顺序** | `start_timestamp` < `end_timestamp` |
-| **时间范围** | `end_timestamp - start_timestamp` ≤ 2592000 (30天) |
-| **时间戳格式** | 正整数 (Unix 秒级时间戳) |
-| **limit 范围** | 1 ~ 5000 |
-| **offset 范围** | ≥ 0 |
-| **properties** | 必须是设备类型定义中存在的属性名 |
-
----
-
-## 4. 返回示例
-
-### 4.1 成功响应 (Code: 200)
-
-```json
-{
-  "code": 200,
-  "message": "Get device history data successfully",
-  "data": {
-    "instance_uuid": "7b64cea8-ed24-4e73-b0a9-2af503bd4e69",
-    "total_count": 2580,
-    "returned_count": 1000,
-    "has_more": true,
-    "records": [
-      {
-        "timestamp": 1704067200,
-        "properties": {
-          "battery_level": {
-            "value": "85",
-            "meta": {
-              "writable": true,
-              "description": "电池电量",
-              "unit": "%",
-              "range": [0, 100],
-              "format": "int"
-            }
-          },
-          "gps_location": {
-            "value": "39.9042,116.4074",
-            "meta": {
-              "writable": false,
-              "description": "GPS 位置",
-              "format": "string"
-            }
-          }
-        }
-      },
-      {
-        "timestamp": 1704067260,
-        "properties": {
-          "battery_level": {
-            "value": "84",
-            "meta": {
-              "writable": true,
-              "description": "电池电量",
-              "unit": "%",
-              "range": [0, 100],
-              "format": "int"
-            }
-          },
-          "gps_location": {
-            "value": "39.9045,116.4078",
-            "meta": {
-              "writable": false,
-              "description": "GPS 位置",
-              "format": "string"
-            }
-          }
-        }
-      }
-    ]
-  }
-}
-```
-
-### 4.2 响应字段说明
-
-| 字段名 | 类型 | 描述 |
-|--------|------|------|
-| `instance_uuid` | string | 设备唯一标识符 |
-| `total_count` | int | 符合条件的总记录数 |
-| `returned_count` | int | 本次实际返回的记录数 |
-| `has_more` | bool | 是否还有更多数据 (用于分页判断) |
-| `records` | []object | 历史数据记录列表 |
-| `records[].timestamp` | int64 | 数据上报时间 (Unix 时间戳) |
-| `records[].properties` | object | 属性数据集合 |
-
-### 4.3 错误响应示例
-
-**参数错误 (Code: 400)**
-```json
-{
-  "code": 400,
-  "message": "Invalid request parameters",
-  "data": {
-    "errors": [
-      {
-        "field": "start_timestamp",
-        "reason": "start_timestamp must be less than end_timestamp"
-      }
-    ]
-  }
-}
-```
-
-**权限不足 (Code: 403)**
-```json
-{
-  "code": 403,
-  "message": "Access denied: insufficient permissions for this device",
-  "data": null
-}
-```
-
-**设备不存在 (Code: 404)**
-```json
-{
-  "code": 404,
-  "message": "Device not found",
-  "data": null
-}
-```
-
-**时间范围过大 (Code: 422)**
-```json
-{
-  "code": 422,
-  "message": "Time range exceeds maximum allowed (30 days)",
-  "data": {
-    "max_range_seconds": 2592000
-  }
-}
-```
-
----
-
-## 5. 使用示例 (cURL)
-
-```bash
-curl -X POST "https://api.example.com/api/v1/devices/7b64cea8-ed24-4e73-b0a9-2af503bd4e69/getHistoryData" \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "start_timestamp": 1704067200,
-    "end_timestamp": 1704153600,
-    "properties": ["battery_level", "gps_location"],
-    "limit": 1000,
-    "offset": 0
-  }'
-```
-
----
-
-## 6. 规范一致性检查
-
-| 规范项 | 状态 | 说明 |
-|--------|------|------|
-| JSON 字段命名 | ✅ | 小写 + 下划线 (`start_timestamp`) |
-| 响应格式 | ✅ | `code/message/data` 统一结构 |
-| 认证方式 | ✅ | JWT Bearer Token |
-| 错误码定义 | ✅ | 遵循项目错误码规范 |
-| 时间戳格式 | ✅ | Unix 秒级时间戳 |
-| UUID 格式 | ✅ | UUID v4 格式 (36 字符) |
-| 属性数据结构 | ✅ | 与 MQTT 上报格式一致 (`value` + `meta`) |
-## 4. 业务流程
-
-### 4.1 设备注册流程（两阶段模式）
-
-#### 阶段一：匿名注册
-
-```mermaid
-sequenceDiagram
-    participant Device
-    participant Server
-    participant Database
-    
-    Device->>Server: POST /DeviceReg?device_type_id=1
-    Server->>Server: 生成16位VerifyCode
-    Server->>Server: 生成8位RegCode
-    Server->>Database: 创建DeviceRegistrationRecord
-    Database-->>Server: 保存成功
-    Server-->>Device: 返回设备信息（含明文verify_code）
-```
-
-**关键逻辑**:
-
-- 生成16位VerifyCode：包含大小写字母、数字、符号
-- 生成8位RegCode：包含大小写字母、数字、符号
-- 临时记录有效期：24小时
-- 防刷机制：TODO 需要添加IP限流
-
-#### 阶段二：用户绑定
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Server
-    participant Database
-    participant MQTT
-    
-    User->>Server: POST /BindDeviceByRegCode (带JWT)
-    Server->>Database: 验证RegCode有效性
-    Database-->>Server: 返回临时记录
-    Server->>Server: 创建正式Instance记录
-    Server->>Database: 保存Instance
-    Server->>MQTT: 发布GO_ON指令到/data/device/{uuid}/action
-    MQTT-->>Device: 设备接收GO_ON指令
-    Device-->>Server: 开始正常工作
-    Server-->>User: 返回绑定成功
-```
-
-**关键逻辑**:
-
-- 验证RegCode：检查是否有效且未过期
-- 创建正式记录：从临时记录转换，添加OwnerUUID
-- MQTT指令：发送"GO_ON"命令激活设备
-- 失败重试：TODO 需要添加Retry机制
-
-### 4.2 认证流程
-
-#### 4.2.1 JWT 认证
-
-- **算法**: HS256
-- **有效期**: 24小时
-- **Payload结构**:
-  ```go
-  type UserClaims struct {
-      Username string `json:"username"`
-      UserUUID string `json:"user_uuid"`
-      Role     string `json:"role"`
-      jwt.RegisteredClaims
-  }
-  ```
-
-#### 4.2.2 设备认证
-
-- **认证凭证**: VerifyCode (16位随机字符串)
-- **存储方式**: SHA-256哈希
-- **传输安全**: 仅在注册时返回明文，后续通信使用哈希验证
-
-### 4.3 在线状态管理
-
-- **检测机制**: 通过MQTT LastWill和心跳包检测
-- **更新频率**: 设备每5分钟上报心跳
-- **状态同步**: 服务器维护设备在线状态，更新LastSeen字段
-
-## 5. 数据库设计
-
-### 5.1 表结构
-
-#### 5.1.1 User 表
+### 7.1 MySQL 表
 
 ```sql
-CREATE TABLE `users`
-(
-    `id`            bigint unsigned NOT NULL AUTO_INCREMENT,
-    `user_uuid`     char(36)     NOT NULL,
-    `username`      varchar(20)  NOT NULL,
-    `password_hash` varchar(255) NOT NULL,
-    `role`          varchar(20) DEFAULT 'user',
-    `status`        varchar(20) DEFAULT 'active',
-    `last_seen`     bigint      DEFAULT NULL,
-    `ip`            varchar(45) DEFAULT NULL,
-    `description`   text,
-    `created_at`    datetime    DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`    datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_user_uuid` (`user_uuid`),
-    UNIQUE KEY `idx_username` (`username`),
-    KEY             `idx_role_status` (`role`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- 核心表：users, instances, device_registration_records, device_shares
+-- 详见 migrations/ 目录 (TODO)
 ```
 
-#### 5.1.2 Instance 表
+### 7.2 IoTDB 结构
 
-```sql
-CREATE TABLE `instances`
-(
-    `id`            bigint unsigned NOT NULL AUTO_INCREMENT,
-    `instance_uuid` char(36)    NOT NULL,
-    `name`          varchar(50) NOT NULL,
-    `type`          int         NOT NULL,
-    `online`        tinyint(1) DEFAULT '0',
-    `owner_uuid`    char(36)    NOT NULL,
-    `description`   text,
-    `add_time`      bigint      NOT NULL,
-    `last_seen`     bigint      DEFAULT NULL,
-    `properties`    json        DEFAULT NULL,
-    `verify_hash`   char(64)    NOT NULL,
-    `sn`            varchar(50) DEFAULT NULL,
-    `remark`        text,
-    `created_at`    datetime    DEFAULT CURRENT_TIMESTAMP,
-    `updated_at`    datetime    DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_instance_uuid` (`instance_uuid`),
-    KEY             `idx_type` (`type`),
-    KEY             `idx_owner_uuid` (`owner_uuid`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+root.device_data.{instance_uuid}.{property_name}
+root.device_latest.{instance_uuid}.{property_name}
 ```
 
-#### 5.1.3 DeviceRegistrationRecord 表
+## 8. 配置文件
 
-```sql
-CREATE TABLE `device_registration_records`
-(
-    `id`             bigint unsigned NOT NULL AUTO_INCREMENT,
-    `device_uuid`    char(36) NOT NULL,
-    `reg_code`       char(8)  NOT NULL,
-    `device_type_id` int      NOT NULL,
-    `verify_hash`    char(64) NOT NULL,
-    `sn`             varchar(50) DEFAULT NULL,
-    `created_at`     datetime    DEFAULT CURRENT_TIMESTAMP,
-    `expires_at`     datetime NOT NULL,
-    `is_bound`       tinyint(1) DEFAULT '0',
-    PRIMARY KEY (`id`),
-    UNIQUE KEY `idx_device_uuid` (`device_uuid`),
-    UNIQUE KEY `idx_reg_code` (`reg_code`),
-    KEY              `idx_expires_at` (`expires_at`),
-    KEY              `idx_is_bound` (`is_bound`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-```
-
-### 5.2 IotDB 拓扑图
-```
-root (根节点)
-├── mm1 (Storage Group 1)
-│   ├── device_data (逻辑容器)
-│   │   ├── 7b64cea8-ed24-4e73-b0a9-2af503bd4e69 (Device ID)
-│   │   │   ├── gps_location (Timeseries)
-│   │   │   └── battery_level (Timeseries)
-│   │   └── 8c75dfb9-fe35-4f84-a1b0-3c5d6e7f8g9h (Device ID)
-│   │       ├── temperature (Timeseries)
-│   │       └── humidity (Timeseries)
-│   └── device_latest (逻辑容器)
-│       ├── 7b64cea8-ed24-4e73-b0a9-2af503bd4e69 (Device ID)
-│       │   ├── gps_location (Timeseries)
-│       │   └── battery_level (Timeseries)
-│       └── 8c75dfb9-fe35-4f84-a1b0-3c5d6e7f8g9h (Device ID)
-│           ├── temperature (Timeseries)
-│           └── humidity (Timeseries)
-└── mm2 (Storage Group 2 - 可能用于其他用途)
-    └── ...
-```
-
-## 6. 配置管理
-
-### 6.1 设备类型配置 (device_type_list.yaml)
+### 8.1 device_type_list.yaml
 
 ```yaml
 device_types:
   - id: 1
     name: "BaseTracker"
-    description: "基础测试用定位器"
+    description: "定位器"
     properties:
       battery_level:
         writable: true
-        description: "电池电量"
+        description: "电量"
         unit: "%"
-        range: [ 0, 100 ]
+        range: [0, 100]
         format: "int"
       gps_location:
         writable: false
         description: "GPS位置"
         format: "string"
-        required: true
-
-  - id: 2
-    name: "SmartSensor"
-    description: "智能传感器"
-    properties:
-      temperature:
-        writable: false
-        description: "温度"
-        unit: "℃"
-        range: [ -40, 85 ]
-        format: "float"
-      humidity:
-        writable: false
-        description: "湿度"
-        unit: "%"
-        range: [ 0, 100 ]
-        format: "float"
 ```
 
-### 6.2 系统配置
+### 8.2 GeneralConfig.yaml
 
-- **MQTT Broker**: 地址、端口、QoS级别
-- **JWT Secret**: 用于签名的密钥
-- **数据库连接**: DSN配置
-- **过期时间**: 临时记录过期时间（24小时）
+```yaml
+database:
+  mysqldsn: "user:pass@tcp(host:port)/dbname"
 
-## 7. 安全设计
+server:
+  port: 27015
 
-### 7.1 数据加密
-
-- **密码存储**: bcrypt(cost=14)
-- **设备认证**: SHA-256哈希
-- **通信加密**: TLS for MQTT and HTTPS
-
-### 7.2 认证机制
-
-- **用户认证**: JWT令牌，24小时有效期
-- **设备认证**: VerifyCode哈希验证
-- **权限控制**: RBAC（基于角色的访问控制）
-
-### 7.3 防刷机制
-
-- **设备注册**: IP限流（TODO 需要实现）
-- **用户注册**: 验证码机制
-- **API调用**: 速率限制
-
-## 8. 硬件集成
-
-### 8.1 CT01 模块使用规范
-
-**上电初始化序列**:
-
-```text
-# 1. 配置 APN (使用默认)
-AT+QICSGP=1,1,"","",""
-# 模块应返回: OK
-
-# 2. 设置客户端 ID (务必唯一)
-AT+MQTTCLIENT="DXCT01_Test_Client_001"
-# 模块应返回: OK
-
-# 3. 配置服务器信息
-AT+MIPSTART="yuyuko.food",1883,4
-# 模块应返回: OK
-# 然后可能返回: +MIPSTART:SUCCESS
-
-# 4. 连接服务器
-AT+MCONNECT=1,60
-# 模块应返回: OK
-# 然后可能返回: +MCONNECT:SUCCESS
-
-# 5. 订阅主题
-AT+MSUB="data/device/{uuid}/action",0
-# 模块应返回: OK
-
-# 6. 发布属性数据
-AT+MPUBEX="data/device/{uuid}/properties",1,0,{payload_length}
-{JSON_PAYLOAD}
-
-# 7. 断开连接
-AT+MDISCONNECT
-# 模块应返回: OK
+IoTDB:
+  host: "localhost"
+  port: 6667
+  username: root
+  password: root
 ```
 
-### 8.2 设备通信规范
+## 9. 事件系统
 
-- **网络类型**:
-    - 移动网络设备: MQTT over TCP
-    - LoRa设备: 通过网关转换为MQTT
-- **重连机制**: 断线后指数退避重连
-- **QoS级别**:
-    - 属性上报: QoS 1（至少一次）
-    - 动作下发: QoS 1（至少一次）
+```go
+// 发布事件
+eventBus.Publish(eventbus.EventDeviceOnline, eventbus.DeviceEvent{
+    InstanceUUID: uuid,
+    Timestamp:    time.Now().Unix(),
+})
 
-## 9. 技术债务与TODO事项
-
-### 9.1 高优先级
-
-1. **防刷机制** (device_service.go:41)
-    - 为设备注册添加IP限流
-    - 实现注册频率控制
-
-2. **重试机制** (user_service.go:138)
-    - MQTT动作下发失败时添加重试逻辑
-    - 实现指数退避算法
-
-3. **安全性增强** (GeneralUtils.go:44)
-    - 为VerifyCode生成添加salt
-    - 增强随机数生成器安全性
-
-### 9.2 中优先级
-
-1. **PropertyMeta扩展** (PropertyMeta.go:16)
-    - 添加Required字段
-    - 添加Type字段（string/int/float/bool）
-
-2. **配置管理** (config.go:30)
-    - 修复Broker.Address()方法
-    - 实现配置热加载
-
-3. **代码解耦** (mqtt_service.go:76)
-    - 将PublishActionToDevice解耦
-    - 实现观察者模式
-
-### 9.3 低优先级
-
-1. **设备管理优化** (device.go:117)
-    - 封装DeviceTypeManager为通用加载器
-    - 支持动态设备类型加载
-
-2. **工厂模式完善** (DeviceFactory.go:38)
-    - 完善设备创建工厂模式
-    - 支持插件式设备类型
-
-3. **代码清理** (device.go:187)
-    - 移除NewInstanceFromConfig的过时注释
-    - 重构设备创建逻辑
-
-## 10. 附录
-
-### 10.1 错误码定义
-
-| 代码  | 含义    | HTTP状态 |
-|-----|-------|--------|
-| 200 | 成功    | 200    |
-| 400 | 参数错误  | 400    |
-| 401 | 未认证   | 401    |
-| 403 | 权限不足  | 403    |
-| 404 | 资源不存在 | 404    |
-| 429 | 请求过多  | 429    |
-| 500 | 服务器错误 | 500    |
-
-### 10.2 验证码生成规范
-
-**RegCode (8位)**:
-
-- 字符集: `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()`
-- 用途: 用户绑定设备
-- 有效期: 24小时
-- 存储: 明文（临时记录中）
-
-**VerifyCode (16位)**:
-
-- 字符集: 同上，更复杂的组合
-- 用途: 设备数据上报鉴权
-- 存储: SHA-256哈希值
-- 返回: 仅注册时返回一次明文
-
-### 10.3 设备类型定义
-
-| ID | 名称          | 描述       | 属性                          |
-|----|-------------|----------|-----------------------------|
-| 1  | BaseTracker | 基础测试用定位器 | battery_level, gps_location |
-| 2  | SmartSensor | 智能传感器    | temperature, humidity       |
-
+// 订阅事件
+eventBus.Subscribe(eventbus.EventDeviceOnline, func(data interface{}) {
+    evt := data.(eventbus.DeviceEvent)
+    // 处理事件
+})
 ```
+
+## 10. 安全规范
+
+| 数据 | 存储方式 | 传输 |
+|------|----------|------|
+| 用户密码 | bcrypt(cost=14) | HTTPS |
+| VerifyCode | SHA-256 哈希 | MQTT TLS |
+| JWT Token | HS256 签名 | HTTPS Header |

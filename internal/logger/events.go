@@ -28,12 +28,18 @@ const (
 	LogEventDeviceError          LogEventType = "device.error"
 
 	// User Events
-	LogEventUserLogin        LogEventType = "user.login"
-	LogEventUserLogout       LogEventType = "user.logout"
-	LogEventUserDeviceShare  LogEventType = "user.device.share"
-	LogEventUserDeviceUnshare LogEventType = "user.device.unshare"
-	LogEventUserDeviceBind   LogEventType = "user.device.bind"
-	LogEventUserPasswordChange LogEventType = "user.password.change"
+	LogEventUserLogin           LogEventType = "user.login"
+	LogEventUserLogout          LogEventType = "user.logout"
+	LogEventUserDeviceShare     LogEventType = "user.device.share"
+	LogEventUserDeviceUnshare   LogEventType = "user.device.unshare"
+	LogEventUserDeviceBind      LogEventType = "user.device.bind"
+	LogEventUserPasswordChange  LogEventType = "user.password.change"
+
+	// Group Events
+	LogEventGroupCreated      LogEventType = "group.created"
+	LogEventDeviceJoinedGroup LogEventType = "device.joined.group"
+	LogEventDeviceQuitGroup   LogEventType = "device.quit.group"
+	LogEventGroupDismissed    LogEventType = "group.dismissed"
 
 	// System Events
 	LogEventSystemError LogEventType = "system.error"
