@@ -22,7 +22,7 @@ func InitDB(config config.Config) {
 		log.Fatal(err)
 	}
 
-	if err := DB.AutoMigrate(&model.User{}, &model.Instance{}, &model.DeviceRegistrationRecord{}, &model.DeviceShare{}); err != nil {
+	if err := DB.AutoMigrate(&model.User{}, &model.Instance{}, &model.DeviceRegistrationRecord{}, &model.DeviceShare{}, &model.DeviceGroup{}, &model.DeviceGroupRelation{}); err != nil {
 		log.Fatal(err)
 	}
 

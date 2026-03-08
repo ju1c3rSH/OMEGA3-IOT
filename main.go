@@ -57,8 +57,8 @@ func main() {
 	log.Println("[Main] LoggerService started")
 
 	deviceService := service.NewDeviceService(db.DB, iotdbClient)
-	brokerURL := "tcp://yuyuko.food:1883"
-	mqttService, err := service.NewMQTTService(brokerURL, deviceService)
+	brokerURL := "tcp://mystia.lorelei.lat:1883"
+	mqttService, err := service.NewMQTTService(brokerURL, deviceService, loggerService)
 	if err != nil {
 		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
 	}
@@ -75,13 +75,18 @@ func main() {
 	log.Println("[Main] UserHandler created")
 	deviceShareService := service.NewDeviceShareService(db.DB, loggerService)
 	log.Println("[Main] DeviceShareService created")
-	deviceHandler := handler.NewDeviceHandler(*deviceService, *deviceShareService)
+	deviceHandler := handler.NewDeviceHandler(db.DB, mqttService)
 
 	// Create LogHandler
 	logHandler := logger.NewLogHandler(loggerService)
 	log.Println("[Main] LogHandler created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService)
+	deviceGroupService := service.NewDeviceGroupService(db.DB, iotdbClient, loggerService)
+	log.Println("[Main] DeviceGroupService created")
+	deviceGroupHandler := handler.NewDeviceGroupHandler(deviceGroupService)
+	log.Println("[Main] DeviceGroupHandler created")
+
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
