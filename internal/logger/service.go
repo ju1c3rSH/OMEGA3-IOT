@@ -329,20 +329,20 @@ func (ls *LoggerService) InitializeLogSchema() error {
 	logPath := "root.mm1.user_data.log"
 	logMeasurements := []struct {
 		name     string
-		dataType client.TSDataType
+		dataType string
 	}{
-		{"user_uuid", client.STRING},
-		{"level", client.STRING},
-		{"message", client.STRING},
-		{"event_type", client.STRING},
-		{"metadata", client.STRING},
-		{"ip_address", client.STRING},
-		{"user_agent", client.STRING},
+		{"user_uuid", "STRING"},
+		{"level", "STRING"},
+		{"message", "STRING"},
+		{"event_type", "STRING"},
+		{"metadata", "STRING"},
+		{"ip_address", "STRING"},
+		{"user_agent", "STRING"},
 	}
 
 	for _, m := range logMeasurements {
 		timeseriesPath := fmt.Sprintf("%s.%s", logPath, m.name)
-		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%d, ENCODING=PLAIN, COMPRESSION=SNAPPY",
+		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%s, ENCODING=PLAIN, COMPRESSION=SNAPPY",
 			timeseriesPath, m.dataType)
 		status, err := session.ExecuteNonQueryStatement(sql)
 		if checkErr := ls.iotdbClient.CheckError(status, err); checkErr != nil {

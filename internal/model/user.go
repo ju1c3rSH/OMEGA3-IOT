@@ -20,6 +20,12 @@ type User struct {
 	Role         int    `json:"role" gorm:"index:idx_role_status"`
 	Status       int    `json:"status" gorm:"index:idx_role_status"`
 }
+
+type UserExtra struct {
+	ID           uint   `gorm:"primaryKey;autoIncrement"`
+	UserUUID     string `json:"user_uuid" gorm:"uniqueIndex;not null;type:char(36)"`
+	ServiceToken string `json:"service_token"`
+}
 type RegUser struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
