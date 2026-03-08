@@ -23,6 +23,45 @@ type TelemetryQueryResult struct {
 	Values     map[string]interface{}
 }
 
+var tsTypeNames = map[client.TSDataType]string{
+	client.BOOLEAN:   "BOOLEAN",
+	client.INT32:     "INT32",
+	client.INT64:     "INT64",
+	client.FLOAT:     "FLOAT",
+	client.DOUBLE:    "DOUBLE",
+	client.TEXT:      "TEXT",
+	client.TIMESTAMP: "TIMESTAMP",
+	client.DATE:      "DATE",
+	client.BLOB:      "BLOB",
+	client.STRING:    "STRING",
+}
+
+func TSDataTypeToString(t client.TSDataType) string {
+	if name, ok := tsTypeNames[t]; ok {
+		return name
+	}
+	return fmt.Sprintf("UNKNOWN(%d)", t)
+}
+
+func StringToTSDataType(s string) (client.TSDataType, error) {
+	tsTypeMap := map[string]client.TSDataType{
+		"BOOLEAN":   client.BOOLEAN,
+		"INT32":     client.INT32,
+		"INT64":     client.INT64,
+		"FLOAT":     client.FLOAT,
+		"DOUBLE":    client.DOUBLE,
+		"TEXT":      client.TEXT,
+		"TIMESTAMP": client.TIMESTAMP,
+		"DATE":      client.DATE,
+		"BLOB":      client.BLOB,
+		"STRING":    client.STRING,
+	}
+	if val, ok := tsTypeMap[s]; ok {
+		return val, nil
+	}
+	return client.UNKNOWN, fmt.Errorf("unknown TSDataType: %s", s)
+}
+
 type TelemetryRepository interface {
 	InsertTelemetry(deviceUUID string, measurements []string, values []interface{}, timestamp int64) error
 	BatchInsertTelemetry(telemetryData []TelemetryData) error
@@ -176,7 +215,7 @@ func (r *iotdbTelemetryRepository) CreateTimeseries(deviceUUID string, propertyN
 	for i, propName := range propertyNames {
 		path := fmt.Sprintf("root.mm1.device_data.%s.%s", deviceUUID, propName)
 		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%s, ENCODING=PLAIN, COMPRESSOR=SNAPPY",
-			path, dataTypes[i])
+			path, TSDataTypeToString(dataTypes[i]))
 
 		status, err := session.ExecuteNonQueryStatement(sql)
 		if checkErr := r.client.CheckError(status, err); checkErr != nil {

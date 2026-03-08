@@ -1,43 +1,89 @@
 # OMEGA3-IOT
 
-## 项目概述
+> **⚠️ 学习型项目 | Learning Project**
+>
+> 本项目处于快速迭代阶段，架构和 API 可能随时变更。**不建议用于生产环境**。
 
-OMEGA3-IOT 是一个基于 Go 的物联网设备管理平台，采用 HTTP REST API + MQTT 双协议架构。 [1](#1-0) 
+## 项目定位
+
+OMEGA3-IOT 是一个**高度可定制、易于部署**的物联网设备管理平台。
+
+- **协议**: HTTP REST API + MQTT 双协议
+- **数据库**: MySQL (元数据) + Apache IoTDB (时序数据)
+- **部署**: 单二进制文件 + YAML 配置，开箱即用
 
 ## 快速启动
 
 ```bash
-# 配置环境变量
-export JWT_SECRET=your_secret_key
-export OMEGA3_IOT=omega3_iot
+# 1. 准备数据库 (MySQL + IoTDB)
+# 2. 复制并修改配置
+cp internal/config/GeneralConfig_example.yaml internal/config/GeneralConfig.yaml
 
-# 启动服务
+# 3. 设置环境变量
+export JWT_SECRET=your_strong_secret
+
+# 4. 运行
 go run main.go
 ```
 
+## 核心特性
+
+| 特性 | 状态 | 说明 |
+|------|------|------|
+| 设备类型系统 | ✅ | YAML 配置驱动，动态扩展 |
+| 两阶段注册 | ✅ | 匿名注册 → 用户绑定 |
+| MQTT 通信 | ✅ | 属性上报 / 指令下发 |
+| 设备分享 | ✅ | 支持 read/write/read_write 权限 |
+| 历史数据 | ✅ | 基于 IoTDB 的时序查询 |
+| 日志系统 | ✅ | 结构化事件日志 |
 
 ## TODO Checklist
 
-###  代码优化
-- [ ] **设备类型加载封装** - `LoadDeviceTypeFromYAML` 需要重构为通用加载器 [5](#1-4) 
-- [ ] **实例创建验证** - `NewInstanceFromConfig` 需要加上验证Hash [6](#1-5)
-- [ ] **MQTT重试机制** - 添加Retry Pool处理发送失败 [10](#1-9) 
-- [ ] **设备工厂实现** - `GetSupportedTypes` 方法待实现 [11](#1-10)
-- [ ] **VerifyCode加盐** - `GenerateVerifyCode` 需要添加salt [13](#1-12) 
+### 功能开发
+- [ ] **自动化测试** - 单元测试 + 集成测试覆盖
+- [ ] **配置热重载** - 无需重启更新配置
+- [ ] **设备固件 OTA** - 远程固件升级支持
+- [ ] **告警规则引擎** - 基于属性的触发器
+- [ ] **数据可视化** - 内置简易 Dashboard
+- [ ] **多租户支持** - 组织/团队级别的资源隔离
+- [ ] **Webhook 通知** - 设备事件外部推送
 
-###  功能增强
-- [ ] **更好的Log保存系统** - 实现结构化日志和持久化存储
-- [ ] **权限账号管理机制** - 实现Group、Team多级权限管理
-- [ ] **属性类型验证** - PropertyMeta需要Required Type字段 [14](#1-13) 
+### 架构优化
+- [ ] **插件系统** - 设备协议插件化
+- [ ] **缓存层** - Redis 缓存热点数据
+- [ ] **消息队列** - 异步处理设备数据
+- [ ] **限流熔断** - API 速率限制
+- [ ] **服务发现** - 分布式部署支持
 
+### 体验改进
+- [ ] **Docker 一键部署** - compose 配置
+- [ ] **CLI 工具** - 设备管理命令行
+- [ ] **文档站点** - 自动生成 API 文档
+- [ ] **SDK 发布** - Go/Python/JS 客户端
 
-## 开发规范 
-- 详情请查看Designstandard.md
-- API详情请查看APIStandard.md
-## Notes
-项目目前处于开发阶段，核心功能已实现但需要优化和扩展。
+## 项目文档
 
-Wiki pages you might want to explore:
-- [Device Lifecycle & Registration (ju1c3rSH/OMEGA3-IOT)](/wiki/ju1c3rSH/OMEGA3-IOT#5.1)
-- [MQTT Communication System (ju1c3rSH/OMEGA3-IOT)](/wiki/ju1c3rSH/OMEGA3-IOT#5.2)
-- [Authentication & Security (ju1c3rSH/OMEGA3-IOT)](/wiki/ju1c3rSH/OMEGA3-IOT#5.5)
+- [DesignStandard.md](DesignStandard.md) - 架构设计与开发规范
+- [APIStandard.md](APIStandard.md) - HTTP API 接口文档
+
+## 技术栈
+
+```
+┌─────────────────────────────────────────┐
+│  HTTP API (Gin)  │  MQTT (paho.mqtt)   │
+├─────────────────────────────────────────┤
+│  Service Layer (Business Logic)         │
+├─────────────────────────────────────────┤
+│  Repository Layer (GORM)                │
+├─────────────────────────────────────────┤
+│  MySQL      │    IoTDB    │   EventBus │
+└─────────────────────────────────────────┘
+```
+
+## 贡献
+
+这是一个个人学习项目，欢迎提 Issue 和 PR。
+
+## License
+
+MIT
