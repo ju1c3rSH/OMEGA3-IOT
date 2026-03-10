@@ -33,13 +33,13 @@ func (pmd *PropertyMeta) Validate(tv *TypedValue) error {
 	}
 
 	if len(pmd.Enum) > 0 {
-		strVal := fmt.Sprintf("%v", tv.Value)
+		strVal := fmt.Sprintf("%v", tv.String())
 		for _, e := range pmd.Enum {
 			if e == strVal {
 				return nil
 			}
 		}
-		return fmt.Errorf("value %v not in enum %v", tv.Value, pmd.Enum)
+		return fmt.Errorf("value %v not in enum %v", tv.String(), pmd.Enum)
 	}
 
 	return nil
