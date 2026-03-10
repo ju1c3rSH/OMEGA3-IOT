@@ -7,13 +7,14 @@ import (
 )
 
 type PropertyMeta struct {
-	Writable    bool
-	Description string
-	Unit        string
-	Range       []int
-	Format      string
-	Enum        []string
-	//TODO Required Type ?
+	Key         string    `yaml:"key" json:"key"`
+	Writable    bool      `yaml:"writable" json:"writable"`
+	Description string    `yaml:"description" json:"description"`
+	Unit        string    `yaml:"unit,omitempty" json:"unit,omitempty"`
+	Range       []float64 `yaml:"range,omitempty" json:"range,omitempty"` // 支持 float 范围
+	Format      string    `yaml:"format" json:"format"`                   // "int", "float", "bool", "string"
+	Enum        []string  `yaml:"enum,omitempty" json:"enum,omitempty"`
+	Required    bool      `yaml:"required,omitempty" json:"required,omitempty"`
 }
 
 func parseMeta(metaStr string) map[string]string {
@@ -54,7 +55,7 @@ func ExtractPropertyMeta(p interface{}) map[string]PropertyMeta {
 		}
 
 		if rangeVal, ok := meta["range"]; ok {
-			var r []int
+			var r []float64
 			if err := json.Unmarshal([]byte(rangeVal), &r); err == nil {
 				propertyMeta.Range = r
 			}
