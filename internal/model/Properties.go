@@ -31,6 +31,13 @@ type TypedValue struct {
 	Timestamp int64       `json:"timestamp,omitempty"`
 }
 
+func (tv *TypedValue) String() string {
+	str, err := tv.ToString()
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	return str
+}
 func (tv *TypedValue) ToString() (string, error) {
 	if tv == nil {
 		return "", fmt.Errorf("typed value is nil")
