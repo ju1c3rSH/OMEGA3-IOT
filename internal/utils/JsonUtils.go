@@ -9,7 +9,7 @@ import (
 )
 
 type PropertyField struct {
-	Value interface{}        `json:"value"`
+	V interface{}        `json:"value"`
 	Meta  model.PropertyMeta `json:"meta"`
 }
 
@@ -21,7 +21,7 @@ type StoredProperty struct {
 type StoredProperties []StoredProperty
 
 // Valuer 接口（写入数据库时自动调用）
-func (p StoredProperties) Value() (driver.Value, error) {
+func (p StoredProperties) V() (driver.V, error) {
 	if p == nil {
 		return nil, nil
 	}

@@ -88,10 +88,13 @@ type DeviceRegistrationRecord struct {
 	}
 */
 type DeviceType struct {
-	ID          int                     `mapstructure:"id" yaml:"id"`
-	Name        string                  `mapstructure:"name" yaml:"name"`
-	Description string                  `mapstructure:"description" yaml:"description"`
-	Properties  map[string]PropertyMeta `mapstructure:"properties" yaml:"properties"`
+	ID           int                     `mapstructure:"id" yaml:"id"`
+	Name         string                  `mapstructure:"name" yaml:"name"`
+	Description  string                  `mapstructure:"description" yaml:"description"`
+	Properties   map[string]PropertyMeta `mapstructure:"properties" yaml:"properties"`
+	Capabilities map[string]Capability   `mapstructure:"capabilities" yaml:"capabilities"`
+	Actions      map[string]ActionMeta   `json:"actions"`
+	Events       map[string]DeviceEvent  `mapstructure:"events" yaml:"events"`
 }
 
 /*
@@ -116,11 +119,21 @@ type DeviceShare struct {
 	UpdatedAt int64  `json:"updated_at"`                                               // 移除 autoUpdateTime 标签
 	ExpiresAt *int64 `gorm:"index" json:"expires_at,omitempty"`                        // 使用 *int64，nil 表示永不过期
 }
-
+type InputParam struct {
+	Name        string      `json:"name" yaml:"name"`
+	Type        string      `json:"type" yaml:"type"`
+	Description string      `json:"description" yaml:"description"`
+	Required    bool        `json:"required" yaml:"required"`
+	Range       []int       `json:"range,omitempty" yaml:"range,omitempty"`
+	Enum        []string    `json:"enum,omitempty" yaml:"enum,omitempty"`
+	Default     interface{} `json:"default,omitempty" yaml:"default,omitempty"`
+}
 type ActionMeta struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
+	Key         string       `json:"key" yaml:"key"`
+	Description string       `json:"description" yaml:"description"`
+	InputParams []InputParam `json:"input_params" yaml:"input_params"`
+	TimeoutSec  int          `json:"timeout_sec" yaml:"timeout_sec"`
+	Idempotent  bool         `json:"idempotent" yaml:"idempotent"`
 }
 type DeviceTypeManager struct {
 	types map[string]*DeviceType
@@ -204,15 +217,25 @@ func NewRegistrationRecord(deviceTypeID int, hashedVerifyCode string) (*DeviceRe
 	}, nil
 }
 func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType, verifyHash string, remark string, deviceUUID string) (*Instance, error) {
-	//TODO这里还不能用，要加上验证Hash
-	props := Properties{Items: make(map[string]*PropertyItem)}
+	if deviceType == nil {
+		return nil, fmt.Errorf("deviceType cannot be nil")
+	}
+	if deviceUUID == "" {
+		return nil, fmt.Errorf("deviceUUID cannot be empty")
+	}
+
+	props := Properties{
+		Items: make(map[string]*TypedInstancePropertyItem),
+	}
+
 	for propName, meta := range deviceType.Properties {
-		props.Items[propName] = &PropertyItem{
-			//Value: getDefaultValue(meta.Type),
+		props.Items[propName] = &TypedInstancePropertyItem{
 			Meta: meta,
 		}
-
 	}
+
+	now := time.Now().Unix()
+
 	return &Instance{
 		InstanceUUID: deviceUUID,
 		Name:         name,
@@ -221,12 +244,16 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 		Online:       false,
 		OwnerUUID:    ownerUuid,
 		Description:  deviceType.Description,
-		AddTime:      time.Now().Unix(),
-		LastSeen:     time.Now().Unix(),
+		AddTime:      now,
+		LastSeen:     now,
 		Properties:   props,
 		VerifyHash:   verifyHash,
+		Status:       "active",
+		IsShared:     false,
+		SharedCount:  0,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}, nil
-
 }
 
 //Let me think , what should i do in next step?shall i put this factory_function to web api directly?maybe not.Because i havent deal the problems in database to save props.After it, i should make a history system to record the changes of the devices,but i dont know how to design a LINEAR Save System....

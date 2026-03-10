@@ -69,10 +69,10 @@ OMEGA3-IOT/
 
 ```go
 type Properties struct {
-    Items map[string]*PropertyItem `json:"items"`
+    Items map[string]*Deprecated_PropertyItem `json:"items"`
 }
 
-type PropertyItem struct {
+type Deprecated_PropertyItem struct {
     Value string       `json:"value"`
     Meta  PropertyMeta `json:"meta"`
 }

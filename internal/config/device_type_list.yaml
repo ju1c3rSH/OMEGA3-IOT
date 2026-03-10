@@ -1,45 +1,372 @@
+# device_types.yaml
+# 物联网物模型定义 - 支持动态扩展、实例化 ID、OTA 升级
+
+version: "1.0.0"  # 物模型版本，用于兼容性检查
+
 device_types:
+  # ============================================================================
+  # 类型 1: BaseTracker - 基础追踪器
+  # ============================================================================
   - id: 1
-    name: "BaseTracker" #also called type
-    description: "A Tracker"
+    name: "BaseTracker"
+    description: "支持定位、电量监控、紧急报警的追踪设备"
+
+    # ── 能力声明 (Capabilities) ──
+    # 设备硬件支持的功能特性，用于前端动态渲染和权限控制
+    capabilities:
+      gps_module:
+        description: "支持 GPS/北斗定位"
+        required: true
+      cellular:
+        description: "支持 4G/Cat.1 通信"
+        required: true
+      siren:
+        description: "支持蜂鸣器报警"
+        required: false
+      motion_sensor:
+        description: "支持加速度计/陀螺仪"
+        required: false
+
+    # ── 属性定义 (Properties) ──
+    # key 作为属性名，用于代码引用和实例 ID 生成
     properties:
       battery_level:
         writable: true
-        description: "电量"
+        description: "当前电量百分比"
         unit: "%"
         range: [0, 100]
         format: "int"
-      
+        required: true
+
+      battery_capacity:
+        writable: false
+        description: "电池额定容量（静态规格）"
+        unit: "mAh"
+        format: "int"
+        required: false
+
       gps_location:
         writable: false
-        description: "GPS位置"
+        description: "GPS 坐标，格式: \"纬度,经度\""
         format: "string"
+        pattern: "^-?\\d+\\.\\d+,-?\\d+\\.\\d+$"  # 正则校验
+        required: false
 
+      signal_strength:
+        writable: false
+        description: "通信信号强度 (dBm)"
+        unit: "dBm"
+        range: [-110, -30]
+        format: "int"
+        required: false
+
+      device_status:
+        writable: true
+        description: "设备运行状态"
+        format: "string"
+        enum: ["online", "offline", "sleep", "error"]
+        required: true
+
+    # ── 事件定义 (Events) ──
+    # 设备主动上报的通知，支持动态扩展（OTA 新增事件无需改后端代码）
+    events:
+      low_battery_alarm:
+        description: "电量低于阈值时主动上报"
+        severity: "warning"  # info | warning | critical
+        output_params:
+          - name: "current_level"
+            type: "int"
+            description: "当前电量"
+          - name: "threshold"
+            type: "int"
+            description: "触发阈值"
+        retention_days: 30  # 事件日志保留天数
+
+      sos_alert:
+        description: "SOS 紧急报警（设备检测到异常自动触发）"
+        severity: "critical"
+        output_params:
+          - name: "location"
+            type: "string"
+            description: "触发时的位置"
+          - name: "trigger_reason"
+            type: "string"
+            enum: ["button_press", "fall_detected", "geo_fence_exit"]
+        retention_days: 365
+
+      motion_detected:
+        description: "检测到移动（需 motion_sensor 能力）"
+        severity: "info"
+        output_params:
+          - name: "acceleration"
+            type: "float"
+            description: "加速度值"
+          - name: "timestamp"
+            type: "int"
+            description: "检测时间戳"
+        # 条件触发：仅当设备具备对应能力时才生效
+        required_capabilities: ["motion_sensor"]
+
+    # ── 动作定义 (Actions) ──
+    # 云端/用户下发的控制指令，每次调用生成唯一的 instance_action_id
+    actions:
+      reboot:
+        description: "远程重启设备"
+        input_params: []  # 无参数
+        timeout_sec: 30   # 期望设备在 30 秒内回复执行结果
+        idempotent: true  # 是否幂等：重复调用无副作用
+
+      sos_trigger:
+        description: "远程模拟触发 SOS（测试用）"
+        input_params:
+          - name: "reason"
+            type: "string"
+            description: "触发原因说明"
+            required: false
+        timeout_sec: 10
+        idempotent: false
+
+      update_config:
+        description: "下发配置更新"
+        input_params:
+          - name: "report_interval"
+            type: "int"
+            description: "数据上报间隔(秒)"
+            range: [60, 3600]
+            required: true
+          - name: "gps_enable"
+            type: "bool"
+            description: "是否启用 GPS"
+            required: true
+        timeout_sec: 60
+        idempotent: true
+
+  # ============================================================================
+  # 类型 2: SmartSensor - 智能环境传感器
+  # ============================================================================
   - id: 2
     name: "SmartSensor"
-    description: "智能传感器"
+    description: "温湿度、光照等环境监测传感器"
+
+    capabilities:
+      temp_sensor:
+        description: "温度传感器"
+        required: true
+      humidity_sensor:
+        description: "湿度传感器"
+        required: true
+      light_sensor:
+        description: "光照传感器"
+        required: false
+      low_power_mode:
+        description: "支持低功耗休眠"
+        required: false
+
     properties:
       temperature:
         writable: false
-        description: "温度"
+        description: "环境温度"
         unit: "°C"
         range: [-40, 85]
         format: "float"
-      
+        required: true
+
       humidity:
         writable: false
-        description: "湿度"
+        description: "环境湿度"
         unit: "%"
         range: [0, 100]
         format: "float"
+        required: true
 
+      light_intensity:
+        writable: false
+        description: "光照强度（需 light_sensor 能力）"
+        unit: "lux"
+        range: [0, 100000]
+        format: "int"
+        required: false
+        required_capabilities: ["light_sensor"]
+
+      sample_rate:
+        writable: true
+        description: "数据采集频率"
+        unit: "seconds"
+        format: "int"
+        enum: [30, 60, 300, 600]
+        required: false
+
+    events:
+      threshold_exceeded:
+        description: "监测值超过设定阈值"
+        severity: "warning"
+        output_params:
+          - name: "metric"
+            type: "string"
+            enum: ["temperature", "humidity", "light_intensity"]
+            description: "超限的指标"
+          - name: "current_value"
+            type: "float"
+            description: "当前值"
+          - name: "threshold"
+            type: "float"
+            description: "阈值"
+          - name: "direction"
+            type: "string"
+            enum: ["above", "below"]
+            description: "超限方向"
+        retention_days: 90
+
+      sensor_error:
+        description: "传感器硬件异常"
+        severity: "critical"
+        output_params:
+          - name: "sensor_type"
+            type: "string"
+            description: "异常传感器类型"
+            enum: ["temperature", "humidity", "light"]
+          - name: "error_code"
+            type: "int"
+            description: "错误码"
+          - name: "recoverable"
+            type: "bool"
+            description: "是否可恢复"
+        retention_days: 365
+
+    actions:
+      calibrate:
+        description: "校准传感器"
+        input_params:
+          - name: "target_type"
+            type: "string"
+            enum: ["temperature", "humidity", "all"]
+            description: "校准目标"
+            required: true
+          - name: "reference_value"
+            type: "float"
+            description: "参考值（可选）"
+            required: false
+        timeout_sec: 120
+        idempotent: false
+
+      set_sample_rate:
+        description: "动态调整采样频率"
+        input_params:
+          - name: "interval_sec"
+            type: "int"
+            range: [30, 3600]
+            description: "采样间隔（秒）"
+            required: true
+        timeout_sec: 30
+        idempotent: true
+
+  # ============================================================================
+  # 类型 3: ToggleMachine - 开关控制设备
+  # ============================================================================
   - id: 3
     name: "ToggleMachine"
-    description: "无情的开关机器"
+    description: "远程开关控制设备，支持状态反馈"
+
+    capabilities:
+      relay_output:
+        description: "继电器输出控制"
+        required: true
+      status_feedback:
+        description: "支持开关状态实时反馈"
+        required: true
+      power_meter:
+        description: "支持电量统计"
+        required: false
+
     properties:
       switch_status:
         writable: true
-        description: "开关状态（Toggle）"
-        unit: "state"
-        range: [0,1]
+        description: "开关状态"
         format: "bool"
+        required: true
+
+      last_toggle_time:
+        writable: false
+        description: "上次切换状态的时间戳"
+        format: "int"  # 时间戳使用 int 类型
+        required: false
+
+      power_consumption:
+        writable: false
+        description: "累计用电量（需 power_meter 能力）"
+        unit: "kWh"
+        range: [0, 1000000]
+        format: "float"
+        required: false
+        required_capabilities: ["power_meter"]
+
+      overload_threshold:
+        writable: true
+        description: "过载保护阈值(瓦)"
+        unit: "W"
+        range: [100, 5000]
+        format: "int"
+        required: false
+
+    events:
+      status_changed:
+        description: "开关状态变更通知"
+        severity: "info"
+        output_params:
+          - name: "new_status"
+            type: "bool"
+            description: "新状态"
+          - name: "trigger_source"
+            type: "string"
+            enum: ["remote", "local", "auto", "error"]
+            description: "触发源"
+          - name: "timestamp"
+            type: "int"
+            description: "变更时间戳"
+        retention_days: 30
+
+      overload_protected:
+        description: "过载保护触发，自动断电"
+        severity: "critical"
+        output_params:
+          - name: "current_power"
+            type: "int"
+            description: "当前功率(W)"
+          - name: "threshold"
+            type: "int"
+            description: "阈值(W)"
+          - name: "trigger_time"
+            type: "int"
+            description: "触发时间戳"
+        retention_days: 365
+
+    actions:
+      toggle:
+        description: "切换开关状态"
+        input_params:
+          - name: "target_status"
+            type: "bool"
+            description: "目标状态（true=开，false=关，不传则翻转）"
+            required: false
+        timeout_sec: 10
+        idempotent: true
+
+      schedule_toggle:
+        description: "设置定时开关"
+        input_params:
+          - name: "cron_expr"
+            type: "string"
+            description: "Cron 表达式，如 \"0 8 * * *\""
+            required: true
+          - name: "target_status"
+            type: "bool"
+            description: "目标状态"
+            required: true
+          - name: "timezone"
+            type: "string"
+            description: "时区，如 \"Asia/Shanghai\""
+            enum: ["UTC", "Asia/Shanghai", "America/New_York"]
+            default: "UTC"
+            required: false
+        timeout_sec: 30
+        idempotent: false
