@@ -28,9 +28,9 @@ type DeviceMessage struct {
 }
 
 type Data struct {
-	Properties map[string]model.PropertyItem `json:"properties"`
-	Event      model.Event                   `json:"event"`
-	Action     model.Action                  `json:"action"`
+	Properties map[string]model.TypedInstancePropertyItem `json:"properties"`
+	Event      model.DeviceEvent                          `json:"event"`
+	Action     model.Action                               `json:"action"`
 }
 type Publisher interface {
 	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
@@ -120,7 +120,7 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 
 	// 确保 instance.Properties.Items 已初始化
 	if instance.Properties.Items == nil {
-		instance.Properties.Items = make(map[string]*model.PropertyItem)
+		instance.Properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 	}
 
 	if err := m.deviceService.UpdateDeviceProperties(*instance, rawPropsData); err != nil {

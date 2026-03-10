@@ -32,9 +32,9 @@ func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
 	}
 }
 
-func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
+func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map[string]model.TypedInstancePropertyItem) error {
 	if instance.Properties.Items == nil {
-		instance.Properties.Items = make(map[string]*model.PropertyItem)
+		instance.Properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 	}
 	for key, value := range data {
 		valueCopy := value
@@ -98,13 +98,14 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 		}
 
 		var properties model.Properties
-		properties.Items = make(map[string]*model.PropertyItem)
+		properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 
 		instanceProp, propExists := instance.Properties.Items[measurement]
-
+		it, _ := model.NewTypedValueFromOld(valStr, instanceProp.Meta.Format)
 		if !propExists {
-			properties.Items[measurement] = &model.PropertyItem{
-				Value: valStr,
+
+			properties.Items[measurement] = &model.TypedInstancePropertyItem{
+				Value: *it,
 				Meta: model.PropertyMeta{
 					Description: "Unknown Prop",
 					Format:      "string",
@@ -112,7 +113,7 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 			}
 		} else {
 			propCopy := *instanceProp
-			propCopy.Value = valStr
+			propCopy.Value = *it
 			properties.Items[measurement] = &propCopy
 		}
 
@@ -196,7 +197,11 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 	for propKey, propItem := range instance.Properties.Items {
 		measurements = append(measurements, propKey)
 
-		tempValue := propItem.Value
+		tempValue, err := propItem.Value.ToString()
+		if err != nil {
+			return fmt.Errorf("failed to parse '%s' with value '%s': %w", propKey, tempValue, err)
+		}
+
 		switch propItem.Meta.Format {
 		case "int", "integer":
 			intVal, err := strconv.ParseInt(tempValue, 10, 32)
@@ -289,6 +294,6 @@ func (s *DeviceService) GetDeviceByUUIDAndVerifyHash(instanceUUID string, verify
 }
 
 // UpdateDeviceProperties updates device properties (used by MQTT service)
-func (s *DeviceService) UpdateDeviceProperties(instance model.Instance, data map[string]model.PropertyItem) error {
+func (s *DeviceService) UpdateDeviceProperties(instance model.Instance, data map[string]model.TypedInstancePropertyItem) error {
 	return s.updateDeviceProperties(instance, data)
 }
