@@ -23,7 +23,7 @@ var userService *service.UserService
 func main() {
 	s := "gopher"
 	fmt.Printf("Hello and welcome, %s!\n", s)
-	//cfg, err := config.LoadConfig(".")
+	//cfg, err := config.DeLoadConfig(".")
 	cfg, _ := config.LoadConfig("./internal/config")
 	if err := model.GlobalDeviceTypeManager.LoadDeviceTypeFromYAML("./internal/config/device_type_list.yaml"); err != nil {
 		log.Fatalf("Failed to load device types: %v", err)
@@ -57,8 +57,8 @@ func main() {
 	log.Println("[Main] LoggerService started")
 
 	deviceService := service.NewDeviceService(db.DB, iotdbClient)
-	brokerURL := "tcp://mystia.lorelei.lat:1883"
-	mqttService, err := service.NewMQTTService(brokerURL, deviceService, loggerService)
+	newURL := fmt.Sprintf("%s://%s:%d", cfg.MQTT.Broker.Protocol, cfg.MQTT.Broker.Host, cfg.MQTT.Broker.Port)
+	mqttService, err := service.NewMQTTService(newURL, deviceService, loggerService)
 	if err != nil {
 		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
 	}
