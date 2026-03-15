@@ -82,7 +82,7 @@ type DeviceRegistrationRecord struct {
 	type DeviceType struct {
 		ID   int    `mapstructure:"id" yaml:"id" json:"id"`
 		Name string `mapsyructure:"name" yaml:"name" json:"name"`
-		//DisplayName string                 `yaml:"display_name" json:"display_name"`
+		//DisplayName string                   `yaml:"display_name" json:"display_name"`
 		Description string                  `mapstructure:"description" yaml:"description" json:"description"`
 		Properties  map[string]PropertyMeta `mapstructure:"description" yaml:"properties" json:"properties"`
 	}

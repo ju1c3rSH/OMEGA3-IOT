@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
 	"OMEGA3-IOT/internal/utils"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -53,16 +54,15 @@ func (h *DeviceGroupHandler) CreateGroup(c *gin.Context) {
 }
 
 func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
-	deviceIDStr := c.Param("device_id")
-	deviceID, err := strconv.ParseInt(deviceIDStr, 10, 64)
-	if err != nil {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_id", err.Error())
+	deviceUUID := c.Param("instance_uuid")
+	if deviceUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_uuid", "device uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 
 	var input struct {
-		GroupID int64 `json:"group_id" binding:"required"`
+		GroupID string `json:"group_id" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -77,8 +77,11 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, response)
 		return
 	}
-
-	if err := h.groupService.JoinGroup(input.GroupID, deviceID, userUUID.(string)); err != nil {
+	groupID, err := strconv.ParseInt(input.GroupID, 10, 64)
+	if err != nil {
+		log.Fatal("转换失败：", err)
+	}
+	if err := h.groupService.JoinGroup(groupID, deviceUUID, userUUID.(string)); err != nil {
 		errMsg := err.Error()
 		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
 			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
@@ -96,17 +99,16 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_id":  input.GroupID,
-		"device_id": deviceID,
+		"group_id":    input.GroupID,
+		"device_uuid": deviceUUID,
 	}, http.StatusOK, "Device joined group successfully")
 	c.JSON(http.StatusOK, response)
 }
 
 func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
-	deviceIDStr := c.Param("device_id")
-	deviceID, err := strconv.ParseInt(deviceIDStr, 10, 64)
-	if err != nil {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_id", err.Error())
+	deviceUUID := c.Param("instance_uuid")
+	if deviceUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_uuid", "device uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
@@ -128,7 +130,7 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.groupService.QuitGroup(input.GroupID, deviceID, userUUID.(string)); err != nil {
+	if err := h.groupService.QuitGroup(input.GroupID, deviceUUID, userUUID.(string)); err != nil {
 		errMsg := err.Error()
 		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
 			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
@@ -146,8 +148,8 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_id":  input.GroupID,
-		"device_id": deviceID,
+		"group_id":    input.GroupID,
+		"device_uuid": deviceUUID,
 	}, http.StatusOK, "Device quit group successfully")
 	c.JSON(http.StatusOK, response)
 }

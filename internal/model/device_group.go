@@ -19,10 +19,10 @@ func (DeviceGroup) TableName() string {
 }
 
 type DeviceGroupRelation struct {
-	GroupID  int64     `gorm:"primaryKey;column:group_id;type:bigint;not null" json:"group_id"`
-	DeviceID int64     `gorm:"primaryKey;column:device_id;type:bigint;not null;index:idx_device_id" json:"device_id"`
-	JoinedAt time.Time `gorm:"column:joined_at;autoCreateTime" json:"joined_at"`
-	Valid    int8      `gorm:"column:valid;type:tinyint(1);default:1" json:"valid"`
+	GroupID    int64     `gorm:"primaryKey;column:group_id;type:bigint;not null" json:"group_id"`
+	DeviceUUID string    `gorm:"primaryKey;column:device_uuid;type:varchar(36);not null;index:idx_device_uuid" json:"device_uuid"`
+	JoinedAt   time.Time `gorm:"column:joined_at;autoCreateTime" json:"joined_at"`
+	Valid      int8      `gorm:"column:valid;type:tinyint(1);default:1" json:"valid"`
 }
 
 func (DeviceGroupRelation) TableName() string {
@@ -30,7 +30,6 @@ func (DeviceGroupRelation) TableName() string {
 }
 
 type GroupMemberDevice struct {
-	InstanceID   int64      `json:"instance_id"`
 	InstanceUUID string     `json:"instance_uuid"`
 	Name         string     `json:"name"`
 	Type         string     `json:"type"`
