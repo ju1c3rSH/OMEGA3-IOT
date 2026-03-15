@@ -1,15 +1,15 @@
 database:
-  mysqldsn: OMEGA3:OMEGA#@tcp(yuyuko.food:55280)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
+  #mysqldsn: OMEGA3:OMEGA#@tcp(hiffu.maribel:1314)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
 
 
 server:
   port: 27015
 
 IoTDB:
-  host: "yuyuko.food"
-  port: 18926
-  username: root
-  password: root
+  #host: "your host"
+  #port: 11451
+  #username: usami
+  #password: renko
   queryTimeoutMs: 4000
   pool:
 

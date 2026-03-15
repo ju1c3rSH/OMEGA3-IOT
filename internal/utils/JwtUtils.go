@@ -9,6 +9,8 @@ import (
 
 var jwtSecret = os.Getenv("JWT_SECRET")
 
+// TODO 不能只用JWT,面试中被嘲笑Token放在redis里，该如何应对这种情况呢？ - 花宝宝的回答 - 知乎
+//https://www.zhihu.com/question/12853133755/answer/2014974048233365651
 type UserClaims struct {
 	UUID     string `json:"uuid"`
 	UserName string `json:"id" example:"dev_001"`
