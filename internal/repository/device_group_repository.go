@@ -16,11 +16,11 @@ type DeviceGroupRepository interface {
 
 	AddDeviceToGroup(relation *model.DeviceGroupRelation) error
 	UpdateDeviceGroupRelation(relation *model.DeviceGroupRelation) error
-	RemoveDeviceFromGroup(groupID, deviceID int64) error
-	RemoveDeviceFromGroupWithTx(tx *gorm.DB, groupID, deviceID int64) error
+	RemoveDeviceFromGroup(groupID int64, deviceUUID string) error
+	RemoveDeviceFromGroupWithTx(tx *gorm.DB, groupID int64, deviceUUID string) error
 	RemoveAllDevicesFromGroupWithTx(tx *gorm.DB, groupID int64) error
 	GetGroupMembers(groupID int64, page, pageSize int) ([]model.GroupMemberDevice, int64, error)
-	GetRelationByGroupAndDevice(groupID, deviceID int64) (*model.DeviceGroupRelation, error)
+	GetRelationByGroupAndDevice(groupID int64, deviceUUID string) (*model.DeviceGroupRelation, error)
 
 	WithTx(tx *gorm.DB) DeviceGroupRepository
 }
@@ -97,22 +97,22 @@ func (r *gormDeviceGroupRepository) AddDeviceToGroup(relation *model.DeviceGroup
 
 func (r *gormDeviceGroupRepository) UpdateDeviceGroupRelation(relation *model.DeviceGroupRelation) error {
 	return r.db.Model(&model.DeviceGroupRelation{}).
-		Where("group_id = ? AND device_id = ?", relation.GroupID, relation.DeviceID).
+		Where("group_id = ? AND device_uuid = ?", relation.GroupID, relation.DeviceUUID).
 		Updates(map[string]interface{}{
 			"valid":     relation.Valid,
 			"joined_at": relation.JoinedAt,
 		}).Error
 }
 
-func (r *gormDeviceGroupRepository) RemoveDeviceFromGroup(groupID, deviceID int64) error {
+func (r *gormDeviceGroupRepository) RemoveDeviceFromGroup(groupID int64, deviceUUID string) error {
 	return r.db.Model(&model.DeviceGroupRelation{}).
-		Where("group_id = ? AND device_id = ?", groupID, deviceID).
+		Where("group_id = ? AND device_uuid = ?", groupID, deviceUUID).
 		Update("valid", 0).Error
 }
 
-func (r *gormDeviceGroupRepository) RemoveDeviceFromGroupWithTx(tx *gorm.DB, groupID, deviceID int64) error {
+func (r *gormDeviceGroupRepository) RemoveDeviceFromGroupWithTx(tx *gorm.DB, groupID int64, deviceUUID string) error {
 	return tx.Model(&model.DeviceGroupRelation{}).
-		Where("group_id = ? AND device_id = ?", groupID, deviceID).
+		Where("group_id = ? AND device_uuid = ?", groupID, deviceUUID).
 		Update("valid", 0).Error
 }
 
@@ -143,7 +143,6 @@ func (r *gormDeviceGroupRepository) GetGroupMembers(groupID int64, page, pageSiz
 
 	query := `
 		SELECT
-			i.id as instance_id,
 			i.instance_uuid as instance_uuid,
 			i.name as name,
 			i.type as type,
@@ -154,7 +153,7 @@ func (r *gormDeviceGroupRepository) GetGroupMembers(groupID int64, page, pageSiz
 			i.status as status,
 			dgr.joined_at as joined_at
 		FROM device_group_relation dgr
-		JOIN instances i ON dgr.device_id = i.id
+		JOIN instances i ON dgr.device_uuid = i.instance_uuid
 		WHERE dgr.group_id = ? AND dgr.valid = 1 AND i.status = 'active'
 		ORDER BY dgr.joined_at DESC
 		LIMIT ? OFFSET ?
@@ -165,8 +164,8 @@ func (r *gormDeviceGroupRepository) GetGroupMembers(groupID int64, page, pageSiz
 	return members, total, err
 }
 
-func (r *gormDeviceGroupRepository) GetRelationByGroupAndDevice(groupID, deviceID int64) (*model.DeviceGroupRelation, error) {
+func (r *gormDeviceGroupRepository) GetRelationByGroupAndDevice(groupID int64, deviceUUID string) (*model.DeviceGroupRelation, error) {
 	var relation model.DeviceGroupRelation
-	err := r.db.Where("group_id = ? AND device_id = ?", groupID, deviceID).First(&relation).Error
+	err := r.db.Where("group_id = ? AND device_uuid = ?", groupID, deviceUUID).First(&relation).Error
 	return &relation, err
 }
