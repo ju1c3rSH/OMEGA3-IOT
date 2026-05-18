@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMEGA3-IOT Debugger</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0061a4; --primary-bg: #e3f2fd;
+            --secondary: #535f70; --bg: #f0f2f5;
+            --surface: #ffffff; --border: #d1d9e0;
+            --success: #2e7d32; --error: #c62828;
+            --warning: #ed6c02; --code-bg: #1e1e1e;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Roboto', sans-serif; }
+        body { background: var(--bg); color: #1f2937; padding: 12px; min-height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Header */
+        header { 
+            display: flex; justify-content: space-between; align-items: center; 
+            margin-bottom: 12px; padding: 10px 16px; 
+            background: var(--surface); border-radius: 8px; border: 1px solid var(--border);
+        }
+        .logo { font-size: 1.2rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+        .status-pill { font-size: 0.75rem; padding: 4px 10px; border-radius: 20px; background: #eee; font-weight: 500; }
+        .status-pill.active { background: #e8f5e9; color: var(--success); }
+        
+        /* Grid System */
+        .layout-container { display: grid; grid-template-columns: 320px 1fr 320px; gap: 12px; flex: 1; margin-bottom: 220px; }
+        @media (max-width: 1400px) { .layout-container { grid-template-columns: 300px 1fr; } }
+        
+        /* Cards */
+        .card { background: var(--surface); border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; margin-bottom: 12px; }
+        .card-header { 
+            padding: 10px 14px; border-bottom: 1px solid var(--border); background: #f8fafc;
+            display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 0.9rem;
+        }
+        .card-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        
+        /* Forms */
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        label { font-size: 0.7rem; color: #64748b; font-weight: 600; text-transform: uppercase; }
+        input, select, textarea { 
+            padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.85rem; width: 100%;
+        }
+        .btn { 
+            padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;
+            display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 0.85rem;
+            transition: 0.2s; background: var(--primary); color: white;
+        }
+        .btn:hover { opacity: 0.9; }
+        .btn.sec { background: var(--secondary); }
+        .btn.outline { background: transparent; border: 1px solid var(--primary); color: var(--primary); }
+        .row { display: flex; gap: 8px; }
+        .row > * { flex: 1; }
+
+        /* Device List */
+        .device-item { 
+            padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; margin-bottom: 6px; cursor: pointer;
+            font-size: 0.8rem; transition: 0.2s;
+        }
+        .device-item:hover { border-color: var(--primary); }
+        .device-item.selected { background: var(--primary-bg); border-color: var(--primary); }
+        .dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+        .dot.online { background: #4caf50; }
+        .dot.offline { background: #94a3b8; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 4px; background: #f1f5f9; padding: 2px; border-radius: 6px; }
+        .tab { flex: 1; padding: 4px; text-align: center; font-size: 0.75rem; cursor: pointer; border-radius: 4px; }
+        .tab.active { background: white; box-shadow: 0 1px 2px rgba(0,0,0,0.1); color: var(--primary); font-weight: 600; }
+
+        /* Console */
+        .console {
+            position: fixed; bottom: 0; left: 0; right: 0; height: 200px;
+            background: var(--code-bg); color: #e5e7eb; z-index: 1000; display: flex; flex-direction: column;
+        }
+        .console-top { padding: 6px 16px; background: #2d2d2d; border-top: 2px solid var(--primary); display: flex; justify-content: space-between; font-size: 0.75rem; }
+        #log-output { flex: 1; overflow-y: auto; padding: 8px 16px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; line-height: 1.4; }
+        .log-line { margin-bottom: 4px; border-bottom: 1px solid #333; padding-bottom: 2px; }
+        .log-tag { padding: 1px 4px; border-radius: 2px; margin-right: 6px; font-weight: bold; }
+        .tag-req { background: #0284c7; } .tag-res { background: #059669; } .tag-err { background: #dc2626; }
+
+        /* Badges */
+        .method-badge { font-family: monospace; font-weight: bold; font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; }
+        .m-post { background: #bbdefb; color: #0d47a1; }
+        .m-get { background: #c8e6c9; color: #1b5e20; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo"><span class="material-symbols-outlined">hub</span> OMEGA3-IOT <span style="font-weight:normal; opacity:0.6; font-size:0.8rem"></span></div>
+    <div class="row" style="width: auto; align-items: center;">
+        <input type="text" id="base_url" value="http://localhost:27015" placeholder="API Base URL" style="width:240px">
+        <div id="auth_status" class="status-pill">● 未认证</div>
+        <button class="btn sec" onclick="clearStorage()" style="padding:4px 8px">重置</button>
+    </div>
+</header>
+
+<div class="layout-container">
+    
+    <!-- Left Column: User & Registration -->
+    <div class="col">
+        <!-- User Auth -->
+        <div class="card">
+            <div class="card-header"><span>用户认证</span><span class="method-badge m-post">AUTH</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field"><label>用户名</label><input type="text" id="user_name" value="admin"></div>
+                    <div class="field"><label>密码</label><input type="password" id="user_pass" value="12345678"></div>
+                </div>
+                <div class="row">
+                    <button class="btn outline" onclick="doAuth('/users/register')">注册</button>
+                    <button class="btn" onclick="doAuth('/users/login')">登录</button>
+                </div>
+                <div class="field">
+                    <label>JWT Token</label>
+                    <input type="text" id="jwt_token" placeholder="Login to get token" readonly style="background:#f8fafc; font-family:monospace; font-size:0.7rem">
+                </div>
+            </div>
+        </div>
+
+        <!-- Registration Flow -->
+        <div class="card">
+            <div class="card-header"><span>Device Registration</span></div>
+            <div class="card-body">
+                <div class="tabs" id="reg_tabs">
+                    <div class="tab active" onclick="switchRegTab('anon')">1. 匿名注册 (设备端)</div>
+                    <div class="tab" onclick="switchRegTab('bind')">2. 用户绑定</div>
+                </div>
+                
+                <div id="panel-anon">
+                    <div class="field"><label>设备类型 ID</label><input type="number" id="reg_type_id" value="1"></div>
+                    <button class="btn sec" onclick="registerAnon()" style="margin-top:8px">
+                        <span class="method-badge m-post">POST</span> 获取注册凭证
+                    </button>
+                    <div id="reg_result" style="margin-top:8px; font-size:0.7rem; color:#475569; background:#f1f5f9; padding:6px; border-radius:4px; display:none; white-space:pre"></div>
+                </div>
+
+                <div id="panel-bind" style="display:none">
+                    <div class="field"><label>注册码 (reg_code)</label><input type="text" id="bind_code" placeholder="如 A0WU@HG6"></div>
+                    <div class="field"><label>设备昵称 (nick)</label><input type="text" id="bind_nick" value="我的新设备"></div>
+                    <button class="btn" onclick="bindDevice()">
+                        <span class="method-badge m-post">POST</span> 绑定到我的账号
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Group (使用 group_uuid) -->
+        <div class="card">
+            <div class="card-header"><span>设备组管理 (UUID)</span><span class="method-badge m-post">GROUP</span></div>
+            <div class="card-body">
+                <div class="field"><label>组名称</label><input type="text" id="group_name" placeholder="输入组名"></div>
+                <button class="btn outline" onclick="createGroup()">创建新组</button>
+                <hr style="border:0; border-top:1px solid #eee; margin:4px 0">
+                <div class="field"><label>组 UUID (用于加入/退出)</label><input type="text" id="group_uuid_op" placeholder="输入组UUID"></div>
+                <div class="row">
+                    <button class="btn sec" onclick="groupOp('join')">加入组</button>
+                    <button class="btn sec" onclick="groupOp('quit')">退出组</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Center Column: Control & List -->
+    <div class="col">
+        <!-- Target Context -->
+        <div class="card" style="border-left: 4px solid var(--primary);">
+            <div class="card-header"><span>操作上下文 (目标设备)</span></div>
+            <div class="card-body">
+                <div class="row" style="align-items: flex-end;">
+                    <div class="field" style="flex:2"><label>当前目标 instance_uuid</label><input type="text" id="target_uuid" placeholder="从列表选择或手动输入" style="font-family:monospace; color:var(--primary); font-weight:500"></div>
+                    <button class="btn outline" onclick="refreshDeviceList()" style="width:120px; height:34px"><span class="material-symbols-outlined" style="font-size:1rem">refresh</span> 刷新列表</button>
+                </div>
+                <div id="device_container" style="max-height: 180px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 4px;">
+                    <div style="text-align:center; padding:20px; color:#94a3b8; font-size:0.8rem">暂无设备，请刷新</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MQTT Action -->
+        <div class="card">
+            <div class="card-header"><span>指令下发 (actions)</span><span class="method-badge m-post">ACTION</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field" style="flex:1"><label>Command</label><input type="text" id="mqtt_cmd" value="reboot"></div>
+                    <div class="field" style="flex:2"><label>Params (JSON)</label><input type="text" id="mqtt_params" value='{"delay_sec": 5}'></div>
+                </div>
+                <button class="btn" onclick="sendAction()">发送指令</button>
+            </div>
+        </div>
+
+        <!-- History Data -->
+        <div class="card">
+            <div class="card-header"><span>历史数据查询</span><span class="method-badge m-post">DATA</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field"><label>开始时间 (Unix)</label><input type="number" id="hist_start"></div>
+                    <div class="field"><label>结束时间 (Unix)</label><input type="number" id="hist_end"></div>
+                </div>
+                <div class="field">
+                    <label>属性列表 (JSON Array)</label>
+                    <input type="text" id="hist_props" value='["battery_level"]'>
+                </div>
+                <div class="row">
+                    <div class="field"><label>Limit</label><input type="number" id="hist_limit" value="100"></div>
+                    <button class="btn sec" style="align-self: flex-end; height:34px" onclick="queryHistory()">查询历史</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Logs & Shares -->
+    <div class="col">
+        <!-- Log Explorer -->
+        <div class="card">
+            <div class="card-header"><span>系统日志 (IoTDB)</span><span class="method-badge m-get">LOG</span></div>
+            <div class="card-body">
+                <div class="field">
+                    <label>查询类型</label>
+                    <select id="log_type">
+                        <option value="device">设备日志 (device)</option>
+                        <option value="user">用户日志 (user)</option>
+                    </select>
+                </div>
+                <button class="btn outline" onclick="querySystemLogs()">查询最近50条</button>
+                <div style="font-size: 0.65rem; color: #94a3b8; margin-top:4px">使用 start_time / end_time 范围</div>
+            </div>
+        </div>
+
+        <!-- Sharing -->
+        <div class="card">
+            <div class="card-header"><span>设备分享</span><span class="method-badge m-post">SHARE</span></div>
+            <div class="card-body">
+                <div class="field"><label>分享给用户 UUID (shared_with_uuid)</label><input type="text" id="share_user_uuid" placeholder="目标用户UUID"></div>
+                <div class="field">
+                    <label>权限</label>
+                    <select id="share_perm">
+                        <option value="read">只读 (read)</option>
+                        <option value="write">可操作 (write)</option>
+                        <option value="read_write" selected>完全 (read_write)</option>
+                    </select>
+                </div>
+                <button class="btn sec" onclick="shareDevice()">执行分享</button>
+            </div>
+        </div>
+
+        <!-- Info -->
+        <div class="card" style="background: transparent; border-style: dashed;">
+            <div class="card-body" style="font-size: 0.75rem; color: #64748b; line-height: 1.5;">
+                <p><strong>✅ 实际响应兼容:</strong></p>
+                <p>• 设备列表使用 <code>instances</code> 字段</p>
+                <p>• 支持无标准包装的直接数据返回</p>
+                <p>• 200状态码不再误标为错误</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Console Footer -->
+<div class="console">
+    <div class="console-top">
+        <span>DEBUG LOGS (兼容实际响应)</span>
+        <span id="log-count" style="opacity: 0.7;">0 entries</span>
+        <span onclick="document.getElementById('log-output').innerHTML=''" style="cursor:pointer">CLEAR</span>
+    </div>
+    <div id="log-output"></div>
+</div>
+
+<script>
+    // --- 全局状态 ---
+    const state = {
+        token: localStorage.getItem('iot_v2_token') || '',
+        uuid: localStorage.getItem('iot_v2_uuid') || '',   // 当前选中的设备instance_uuid
+        baseUrl: ''
+    };
+
+    // --- 初始化 ---
+    document.addEventListener('DOMContentLoaded', () => {
+        if (state.token) {
+            document.getElementById('jwt_token').value = state.token;
+            updateAuthUI(true);
+        }
+        document.getElementById('target_uuid').value = state.uuid;
+        
+        // 默认时间范围: 最近24小时
+        const now = Math.floor(Date.now() / 1000);
+        document.getElementById('hist_start').value = now - 86400;
+        document.getElementById('hist_end').value = now;
+
+        // 如果已有token，自动刷新设备列表
+        if (state.token) refreshDeviceList();
+    });
+
+    // --- 核心API调用 (兼容两种响应格式) ---
+    async function apiCall(endpoint, method, data = null, isForm = false) {
+        const baseUrl = document.getElementById('base_url').value.replace(/\/$/, '');
+        const url = `${baseUrl}/api/v1${endpoint}`;
+        
+        const headers = {};
+        if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
+        
+        let body = null;
+        if (data) {
+            if (isForm) {
+                headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                body = new URLSearchParams(data).toString();
+            } else {
+                headers['Content-Type'] = 'application/json';
+                body = JSON.stringify(data);
+            }
+        }
+
+        log(`→ ${method} ${endpoint}`, 'req', { data, isForm });
+
+        try {
+            const response = await fetch(url, { method, headers, body });
+            const result = await response.json();
+            
+            // 处理成功响应 (HTTP 2xx)
+            if (response.ok) {
+                // 如果有标准包装 {code, message, data}，检查code是否为2xx
+                if (result && typeof result === 'object' && 'code' in result) {
+                    if (result.code === 200 || result.code === 201) {
+                        log(`← ${result.code} ${result.message || 'OK'}`, 'res', result.data);
+                        return result;
+                    } else {
+                        // 业务错误，但HTTP状态是2xx? 罕见，但按规范不应该发生
+                        log(`✖ ${result.code} ${result.message}`, 'err', result);
+                        alert(`业务错误: ${result.message}`);
+                        return null;
+                    }
+                } else {
+                    // 无标准包装，直接返回数据 (例如 /users/getUserAllDevices 返回直接数据)
+                    log(`← 200 (直接数据)`, 'res', result);
+                    // 构造一个类似标准响应的对象，方便统一处理
+                    return { code: 200, message: 'success', data: result };
+                }
+            } else {
+                // HTTP错误 (4xx, 5xx)
+                const msg = result?.message || `HTTP ${response.status}`;
+                log(`✖ ${response.status} ${msg}`, 'err', result);
+                alert(`请求失败: ${msg}`);
+                return null;
+            }
+        } catch (err) {
+            log(`✖ 网络错误`, 'err', err.message);
+            alert(`网络请求失败: ${err.message}`);
+            return null;
+        }
+    }
+
+    // --- 用户认证 ---
+    async function doAuth(path) {
+        const username = document.getElementById('user_name').value;
+        const password = document.getElementById('user_pass').value;
+        const res = await apiCall(path, 'POST', { username, password }, true);
+        if (res && res.data && res.data.access_token) {
+            state.token = res.data.access_token;
+            localStorage.setItem('iot_v2_token', state.token);
+            document.getElementById('jwt_token').value = state.token;
+            updateAuthUI(true);
+            refreshDeviceList(); // 登录后自动拉取设备
+        }
+    }
+
+    // --- 匿名注册 (设备端) ---
+    async function registerAnon() {
+        const typeId = document.getElementById('reg_type_id').value;
+        const res = await apiCall('/device/deviceRegisterAnon', 'POST', { device_type_id: typeId }, true);
+        if (res && res.data && res.data.device) {
+            const d = res.data.device;
+            const box = document.getElementById('reg_result');
+            box.style.display = 'block';
+            box.textContent = `reg_code: ${d.reg_code}\nuuid: ${d.uuid}\nverify_code: ${d.verify_code}\nexpires_at: ${d.expires_at}`;
+            document.getElementById('bind_code').value = d.reg_code;
+        }
+    }
+
+    // --- 用户绑定设备 (JSON) ---
+    async function bindDevice() {
+        const data = {
+            reg_code: document.getElementById('bind_code').value,
+            device_nick: document.getElementById('bind_nick').value,
+            device_remark: ""
+        };
+        const res = await apiCall('/users/bindDeviceByRegCode', 'POST', data, false);
+        if (res) refreshDeviceList();
+    }
+
+    // --- 获取我的设备列表 (兼容实际返回 {instance_count, instances}) ---
+    async function refreshDeviceList() {
+        const res = await apiCall('/users/getUserAllDevices', 'GET');
+        const container = document.getElementById('device_container');
+        if (res && res.data) {
+            // 实际返回结构: { instance_count: 1, instances: [...] }
+            let devices = [];
+            if (Array.isArray(res.data)) {
+                devices = res.data; // 万一直接返回数组
+            } else if (res.data.instances && Array.isArray(res.data.instances)) {
+                devices = res.data.instances;
+            } else if (res.data.devices && Array.isArray(res.data.devices)) {
+                devices = res.data.devices; // 兼容旧版
+            }
+            
+            if (devices.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">暂无设备</div>';
+                return;
+            }
+
+            container.innerHTML = devices.map(d => {
+                const deviceUuid = d.instance_uuid || d.uuid;
+                const isSelected = (state.uuid === deviceUuid);
+                return `
+                    <div class="device-item ${isSelected ? 'selected' : ''}" onclick="selectDevice('${deviceUuid}')">
+                        <span class="dot ${d.online ? 'online' : 'offline'}"></span>
+                        <strong>${d.name || '无名称'}</strong> 
+                        <span style="opacity:0.6; font-size:0.7rem">(${(deviceUuid || '').substring(0,8)}...)</span>
+                    </div>
+                `;
+            }).join('');
+        }
+    }
+
+    // --- 选择设备 ---
+    function selectDevice(uuid) {
+        state.uuid = uuid;
+        localStorage.setItem('iot_v2_uuid', uuid);
+        document.getElementById('target_uuid').value = uuid;
+        refreshDeviceList();  // 刷新高亮
+    }
+
+    // --- 发送指令 (actions) ---
+    async function sendAction() {
+        const uuid = document.getElementById('target_uuid').value;
+        if (!uuid) return alert("请先选择或输入设备UUID");
+        let params = {};
+        try {
+            params = JSON.parse(document.getElementById('mqtt_params').value);
+        } catch (e) {
+            alert("Params JSON 格式错误");
+            return;
+        }
+        const data = {
+            command: document.getElementById('mqtt_cmd').value,
+            params: params
+        };
+        await apiCall(`/devices/${uuid}/actions`, 'POST', data, false);
+    }
+
+    // --- 历史数据查询 ---
+    async function queryHistory() {
+        const uuid = document.getElementById('target_uuid').value;
+        if (!uuid) return alert("请选择设备");
+        let properties = [];
+        try {
+            properties = JSON.parse(document.getElementById('hist_props').value);
+        } catch (e) {
+            alert("properties JSON 格式错误");
+            return;
+        }
+        const data = {
+            start_timestamp: parseInt(document.getElementById('hist_start').value),
+            end_timestamp: parseInt(document.getElementById('hist_end').value),
+            properties: properties,
+            limit: parseInt(document.getElementById('hist_limit').value),
+            offset: 0
+        };
+        await apiCall(`/devices/${uuid}/getHistoryData`, 'POST', data, false);
+    }
+
+    // --- 创建组 (JSON) ---
+    async function createGroup() {
+        const name = document.getElementById('group_name').value;
+        if (!name) return alert("请输入组名称");
+        await apiCall('/devices/groups/create_group', 'POST', { name, description: "" }, false);
+    }
+
+    // --- 加入/退出组 (使用 group_uuid) ---
+    async function groupOp(type) {
+        const deviceUuid = document.getElementById('target_uuid').value;
+        const groupUuid = document.getElementById('group_uuid_op').value;
+        if (!deviceUuid || !groupUuid) return alert("需要设备UUID和组UUID");
+        await apiCall(`/devices/${deviceUuid}/${type}_group`, 'POST', { group_uuid: groupUuid }, false);
+    }
+
+    // --- 查询系统日志 (GET) ---
+    async function querySystemLogs() {
+        const type = document.getElementById('log_type').value;
+        const targetUuid = document.getElementById('target_uuid').value;
+        if (!targetUuid) return alert("请先选择设备（日志查询需要目标UUID）");
+        
+        const start = document.getElementById('hist_start').value;
+        const end = document.getElementById('hist_end').value;
+        
+        const paramName = (type === 'device') ? 'device_uuid' : 'user_uuid';
+        const url = `/logs/${type}?${paramName}=${targetUuid}&start_time=${start}&end_time=${end}&limit=50`;
+        
+        await apiCall(url, 'GET');
+    }
+
+    // --- 分享设备 ---
+    async function shareDevice() {
+        const deviceUuid = document.getElementById('target_uuid').value;
+        const sharedWithUuid = document.getElementById('share_user_uuid').value;
+        if (!deviceUuid || !sharedWithUuid) return alert("需要设备UUID和目标用户UUID");
+        
+        const data = {
+            shared_with_uuid: sharedWithUuid,
+            permission: document.getElementById('share_perm').value,
+            expires_at: null
+        };
+        await apiCall(`/devices/${deviceUuid}/share`, 'POST', data, false);
+    }
+
+    // --- 辅助函数 ---
+    function log(title, tag, detail) {
+        const out = document.getElementById('log-output');
+        const div = document.createElement('div');
+        div.className = 'log-line';
+        const time = new Date().toLocaleTimeString();
+        let detailHtml = '';
+        if (detail !== undefined && detail !== null) {
+            let detailStr = (typeof detail === 'object') ? JSON.stringify(detail, null, 2) : String(detail);
+            detailHtml = `<pre style="color:#9cdcfe; margin-top:4px; font-size:0.7rem;">${escapeHtml(detailStr)}</pre>`;
+        }
+        div.innerHTML = `<span style="color:#888">[${time}]</span> <span class="log-tag tag-${tag}">${tag.toUpperCase()}</span> <strong>${escapeHtml(title)}</strong>${detailHtml}`;
+        out.prepend(div);
+        document.getElementById('log-count').textContent = out.children.length + " entries";
+    }
+
+    function escapeHtml(unsafe) {
+        if (!unsafe) return unsafe;
+        return unsafe.replace(/[&<>"]/g, function(m) {
+            if(m === '&') return '&amp;'; if(m === '<') return '&lt;'; if(m === '>') return '&gt;'; if(m === '"') return '&quot;';
+            return m;
+        });
+    }
+
+    function switchRegTab(tab) {
+        document.querySelectorAll('#reg_tabs .tab').forEach(t => t.classList.remove('active'));
+        event.target.classList.add('active');
+        document.getElementById('panel-anon').style.display = tab === 'anon' ? 'block' : 'none';
+        document.getElementById('panel-bind').style.display = tab === 'bind' ? 'block' : 'none';
+    }
+
+    function updateAuthUI(ok) {
+        const el = document.getElementById('auth_status');
+        el.textContent = ok ? '● 已认证' : '● 未认证';
+        el.className = 'status-pill ' + (ok ? 'active' : '');
+    }
+
+    function clearStorage() {
+        if(confirm("确定清除Token和本地缓存？")) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+
+    // 暴露全局函数
+    window.doAuth = doAuth;
+    window.registerAnon = registerAnon;
+    window.bindDevice = bindDevice;
+    window.refreshDeviceList = refreshDeviceList;
+    window.selectDevice = selectDevice;
+    window.sendAction = sendAction;
+    window.queryHistory = queryHistory;
+    window.createGroup = createGroup;
+    window.groupOp = groupOp;
+    window.querySystemLogs = querySystemLogs;
+    window.shareDevice = shareDevice;
+    window.switchRegTab = switchRegTab;
+    window.clearStorage = clearStorage;
+</script>
+</body>
+</html>

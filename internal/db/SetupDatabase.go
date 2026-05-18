@@ -3,14 +3,17 @@ package db
 import (
 	"OMEGA3-IOT/internal/config"
 	"OMEGA3-IOT/internal/model"
+	"context"
 	"fmt"
 	"github.com/apache/iotdb-client-go/client"
+	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"log"
 )
 
 var DB *gorm.DB
+var RedisClient *redis.Client
 
 func InitDB(config config.Config) {
 	MYSQLdsn := config.Database.MYSQLDSN
@@ -27,6 +30,18 @@ func InitDB(config config.Config) {
 	}
 
 	log.Println("Database Connection inited")
+}
+
+func InitRedis(cfg config.Config) {
+	RedisClient = redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := RedisClient.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	log.Println("Redis Connection inited")
 }
 func NewIotDBFromConfig(config config.Config) (*IOTDBClient, error) {
 	poolConfig := &client.PoolConfig{

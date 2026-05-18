@@ -121,7 +121,8 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 		return "", nil, fmt.Errorf("invalid credentials")
 	}
 
-	token, err := utils.GenerateToken(user.UserName, user.UserUUID, user.Role)
+	jti := utils.GenerateUUID().String()
+	token, err := utils.GenerateToken(user.UserName, user.UserUUID, user.Role, jti)
 	if err != nil {
 		s.loggerService.EmitUserLog(logger.NewUserLogEvent(user.UserUUID, logger.LogLevelPanic, "Login failed: token generation error", logger.LogEventUserLogin))
 		return "", nil, err

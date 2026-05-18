@@ -6,6 +6,7 @@ import (
 	"OMEGA3-IOT/internal/db"
 	"OMEGA3-IOT/internal/eventbus"
 	"OMEGA3-IOT/internal/handler"
+	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
@@ -35,6 +36,7 @@ func main() {
 
 	log.Println("[Main] Device types loaded successfully")
 	db.InitDB(cfg)
+	db.InitRedis(cfg)
 	iotdbClient, err := db.NewIotDBFromConfig(cfg)
 	if err != nil {
 		log.Fatalf("[Main] Failed to create IoTDB client: %v", err)
@@ -69,9 +71,14 @@ func main() {
 	instanceRepo := repository.NewInstanceRepository(db.DB)
 	deviceRegistrationRepo := repository.NewDeviceRegistrationRecordRepository(db.DB)
 
+	// Token blacklist
+	tokenBlacklistRepo := repository.NewTokenBlacklistRepository(db.RedisClient)
+	tokenBlacklistService := service.NewTokenBlacklistService(tokenBlacklistRepo)
+	log.Println("[Main] TokenBlacklistService created")
+
 	userService = service.NewUserService(mqttService, userRepo, instanceRepo, deviceRegistrationRepo, iotdbClient, loggerService)
 	log.Println("[Main] UserService created")
-	userHandler := handler.NewUserHandler(userService)
+	userHandler := handler.NewUserHandler(userService, tokenBlacklistService)
 	log.Println("[Main] UserHandler created")
 	deviceShareService := service.NewDeviceShareService(db.DB, loggerService)
 	log.Println("[Main] DeviceShareService created")
@@ -86,7 +93,10 @@ func main() {
 	deviceGroupHandler := handler.NewDeviceGroupHandler(deviceGroupService)
 	log.Println("[Main] DeviceGroupHandler created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler)
+	jwtAuth := MiddleWares.NewJWTAuth(tokenBlacklistService)
+	log.Println("[Main] JWTAuth middleware created")
+
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
