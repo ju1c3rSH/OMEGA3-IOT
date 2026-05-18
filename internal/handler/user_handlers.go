@@ -48,6 +48,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	userInfo := gin.H{
 		"id":         user.ID,
+		"uuid":       user.UserUUID,
 		"username":   user.UserName,
 		"role":       user.Role,
 		"created_at": user.CreatedAt,
@@ -55,8 +56,8 @@ func (h *UserHandler) Register(c *gin.Context) {
 		"last_ip":    user.IP,
 	}
 
-	response := types.NewSuccessResponseWithCode(userInfo, http.StatusCreated, "User created successfully")
-	c.JSON(http.StatusCreated, response)
+	response := types.NewSuccessResponseWithCode(userInfo, http.StatusOK, "User created successfully")
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *UserHandler) Login(c *gin.Context) {
@@ -78,6 +79,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		"access_token": token,
 		"user": gin.H{
 			"id":       user.ID,
+			"uuid":     user.UserUUID,
 			"username": user.UserName,
 			"role":     user.Role,
 		},
@@ -88,14 +90,14 @@ func (h *UserHandler) Login(c *gin.Context) {
 }
 
 func (h *UserHandler) GetUserInfo(c *gin.Context) {
-	userID, exists := c.Get("user_id")
+	userUUID, exists := c.Get("user_uuid")
 	if !exists {
 		response := types.NewErrorResponse(http.StatusUnauthorized, "Authentication required", "")
 		c.JSON(http.StatusUnauthorized, response)
 		return
 	}
 
-	user, err := h.userService.GetUserInfoByID(userID.(uint))
+	user, err := h.userService.GetUserInfoByUUID(userUUID.(string))
 	if err != nil {
 		response := types.NewErrorResponse(http.StatusNotFound, "User not found", err.Error())
 		c.JSON(http.StatusNotFound, response)
@@ -104,6 +106,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 
 	userInfo := gin.H{
 		"id":         user.ID,
+		"uuid":       user.UserUUID,
 		"username":   user.UserName,
 		"role":       user.Role,
 		"created_at": user.CreatedAt,
@@ -184,6 +187,6 @@ func (h *UserHandler) BindDeviceByRegCode(c *gin.Context) {
 		"verify_hash": device.VerifyHash,
 	}}
 
-	response := types.NewSuccessResponseWithCode(payload, http.StatusCreated, "Device created successfully")
-	c.JSON(http.StatusCreated, response)
+	response := types.NewSuccessResponseWithCode(payload, http.StatusOK, "Device created successfully")
+	c.JSON(http.StatusOK, response)
 }

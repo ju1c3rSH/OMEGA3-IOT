@@ -5,9 +5,9 @@ import (
 )
 
 type DeviceGroup struct {
-	ID          int64     `gorm:"primaryKey;column:id" json:"id"`
+	GroupUUID   string    `gorm:"primaryKey;column:group_uuid;type:char(36);not null" json:"group_uuid"`
 	Name        string    `gorm:"column:name;type:varchar(128);not null" json:"name"`
-	OwnerID     int64     `gorm:"column:owner_id;type:bigint;not null;index:idx_owner_id" json:"owner_id"`
+	OwnerUUID   string    `gorm:"column:owner_uuid;type:char(36);not null;index:idx_owner_uuid" json:"owner_uuid"`
 	CreatedAt   time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
 	Description string    `gorm:"column:description;type:text" json:"description,omitempty"`
@@ -19,10 +19,10 @@ func (DeviceGroup) TableName() string {
 }
 
 type DeviceGroupRelation struct {
-	GroupID    int64     `gorm:"primaryKey;column:group_id;type:bigint;not null" json:"group_id"`
-	DeviceUUID string    `gorm:"primaryKey;column:device_uuid;type:varchar(36);not null;index:idx_device_uuid" json:"device_uuid"`
-	JoinedAt   time.Time `gorm:"column:joined_at;autoCreateTime" json:"joined_at"`
-	Valid      int8      `gorm:"column:valid;type:tinyint(1);default:1" json:"valid"`
+	GroupUUID   string    `gorm:"primaryKey;column:group_uuid;type:char(36);not null;index:idx_group_uuid" json:"group_uuid"`
+	DeviceUUID  string    `gorm:"primaryKey;column:device_uuid;type:varchar(36);not null;index:idx_device_uuid" json:"device_uuid"`
+	JoinedAt    time.Time `gorm:"column:joined_at;autoCreateTime" json:"joined_at"`
+	Valid       int8      `gorm:"column:valid;type:tinyint(1);default:1" json:"valid"`
 }
 
 func (DeviceGroupRelation) TableName() string {

@@ -64,8 +64,8 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 		protected.POST("/devices/groups/create_group", deviceGroupHandler.CreateGroup)
 		protected.POST("/devices/:instance_uuid/join_group", deviceGroupHandler.JoinGroup)
 		protected.POST("/devices/:instance_uuid/quit_group", deviceGroupHandler.QuitGroup)
-		protected.GET("/devices/groups/:group_id/members", deviceGroupHandler.GetGroupMembers)
-		protected.POST("/devices/groups/:group_id/dismiss_group", deviceGroupHandler.DismissGroup)
+		protected.GET("/devices/groups/:group_uuid/members", deviceGroupHandler.GetGroupMembers)
+		protected.POST("/devices/groups/:group_uuid/dismiss_group", deviceGroupHandler.DismissGroup)
 	}
 
 	usersMe := v1.Group("/users/me")

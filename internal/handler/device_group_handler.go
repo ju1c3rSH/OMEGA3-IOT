@@ -3,8 +3,6 @@ package handler
 import (
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
-	"OMEGA3-IOT/internal/utils"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -40,9 +38,10 @@ func (h *DeviceGroupHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	ownerID := utils.ParseUserIDFromUUID(userUUID.(string))
+	// 直接使用userUUID，不再转换为int64
+	ownerUUID := userUUID.(string)
 
-	group, err := h.groupService.CreateGroup(input.Name, input.Description, ownerID)
+	group, err := h.groupService.CreateGroup(input.Name, input.Description, ownerUUID)
 	if err != nil {
 		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create group", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
@@ -62,7 +61,7 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 	}
 
 	var input struct {
-		GroupID string `json:"group_id" binding:"required"`
+		GroupUUID string `json:"group_uuid" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -77,11 +76,9 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, response)
 		return
 	}
-	groupID, err := strconv.ParseInt(input.GroupID, 10, 64)
-	if err != nil {
-		log.Fatal("转换失败：", err)
-	}
-	if err := h.groupService.JoinGroup(groupID, deviceUUID, userUUID.(string)); err != nil {
+	// 直接使用group_uuid字符串，不再解析为int64
+	groupUUID := input.GroupUUID
+	if err := h.groupService.JoinGroup(groupUUID, deviceUUID, userUUID.(string)); err != nil {
 		errMsg := err.Error()
 		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
 			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
@@ -99,7 +96,7 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_id":    input.GroupID,
+		"group_uuid":  input.GroupUUID,
 		"device_uuid": deviceUUID,
 	}, http.StatusOK, "Device joined group successfully")
 	c.JSON(http.StatusOK, response)
@@ -114,7 +111,7 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 	}
 
 	var input struct {
-		GroupID int64 `json:"group_id" binding:"required"`
+		GroupUUID string `json:"group_uuid" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -130,7 +127,7 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.groupService.QuitGroup(input.GroupID, deviceUUID, userUUID.(string)); err != nil {
+	if err := h.groupService.QuitGroup(input.GroupUUID, deviceUUID, userUUID.(string)); err != nil {
 		errMsg := err.Error()
 		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
 			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
@@ -148,7 +145,7 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_id":    input.GroupID,
+		"group_uuid":  input.GroupUUID,
 		"device_uuid": deviceUUID,
 	}, http.StatusOK, "Device quit group successfully")
 	c.JSON(http.StatusOK, response)
@@ -178,9 +175,10 @@ func (h *DeviceGroupHandler) GetGroups(c *gin.Context) {
 		pageSize = 100
 	}
 
-	ownerID := utils.ParseUserIDFromUUID(userUUID.(string))
+	// 直接使用userUUID，不再转换为int64
+	ownerUUID := userUUID.(string)
 
-	groups, total, err := h.groupService.GetGroups(ownerID, page, pageSize)
+	groups, total, err := h.groupService.GetGroups(ownerUUID, page, pageSize)
 	if err != nil {
 		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to get groups", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
@@ -197,10 +195,11 @@ func (h *DeviceGroupHandler) GetGroups(c *gin.Context) {
 }
 
 func (h *DeviceGroupHandler) GetGroupMembers(c *gin.Context) {
-	groupIDStr := c.Param("group_id")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_id", err.Error())
+	// 直接使用group_uuid字符串，不再解析为int64
+	groupUUID := c.Param("group_uuid")
+	// 参数验证
+	if groupUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_uuid", "group_uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
@@ -228,7 +227,7 @@ func (h *DeviceGroupHandler) GetGroupMembers(c *gin.Context) {
 		pageSize = 100
 	}
 
-	members, total, err := h.groupService.GetGroupMembers(groupID, userUUID.(string), page, pageSize)
+	members, total, err := h.groupService.GetGroupMembers(groupUUID, userUUID.(string), page, pageSize)
 	if err != nil {
 		if err.Error() == "Could not find a match group" {
 			response := types.NewErrorResponse(http.StatusNotFound, "Could not find a match group")
@@ -250,10 +249,11 @@ func (h *DeviceGroupHandler) GetGroupMembers(c *gin.Context) {
 }
 
 func (h *DeviceGroupHandler) DismissGroup(c *gin.Context) {
-	groupIDStr := c.Param("group_id")
-	groupID, err := strconv.ParseInt(groupIDStr, 10, 64)
-	if err != nil {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_id", err.Error())
+	// 直接使用group_uuid字符串，不再解析为int64
+	groupUUID := c.Param("group_uuid")
+	// 参数验证
+	if groupUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_uuid", "group_uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
@@ -265,7 +265,7 @@ func (h *DeviceGroupHandler) DismissGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.groupService.DismissGroup(groupID, userUUID.(string)); err != nil {
+	if err := h.groupService.DismissGroup(groupUUID, userUUID.(string)); err != nil {
 		if err.Error() == "Could not find a match group" {
 			response := types.NewErrorResponse(http.StatusNotFound, "Could not find a match group")
 			c.JSON(http.StatusNotFound, response)
@@ -277,7 +277,7 @@ func (h *DeviceGroupHandler) DismissGroup(c *gin.Context) {
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_id": groupID,
+		"group_uuid": groupUUID,
 	}, http.StatusOK, "Group dismissed successfully")
 	c.JSON(http.StatusOK, response)
 }
