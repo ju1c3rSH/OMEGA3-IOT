@@ -36,6 +36,13 @@
 GET /api/v1/health
 ```
 
+### 测试端点
+```
+GET /api/v1/test
+Query参数:
+  msg (可选): 测试消息，默认值为"hello world"
+```
+
 ### 用户注册
 ```
 POST /api/v1/users/register
@@ -177,9 +184,9 @@ Body: {
   "description": "客厅所有传感器"
 }
 Response: {
-  "id": 1,
+  "group_uuid": "...",
   "name": "客厅设备",
-  "owner_id": 1,
+  "owner_uuid": "...",
   "description": "客厅所有传感器",
   "created_at": "...",
   "updated_at": "...",
@@ -191,15 +198,15 @@ Response: {
 ```
 POST /api/v1/devices/{instance_uuid}/join_group
 Body: {
-  "group_id": 1
+  "group_uuid": "..."
 }
-```
-
+````
+`
 ### 设备退出组
 ```
 POST /api/v1/devices/{instance_uuid}/quit_group
 Body: {
-  "group_id": 1
+  "group_uuid": "..."
 }
 ```
 
@@ -216,7 +223,7 @@ Response: {
 
 ### 获取组成员
 ```
-GET /api/v1/devices/groups/{group_id}/members?page=1&page_size=10
+GET /api/v1/devices/groups/{group_uuid}/members?page=1&page_size=10
 Response: {
   "members": [...],
   "total": 5,
@@ -227,9 +234,9 @@ Response: {
 
 ### 解散组
 ```
-POST /api/v1/devices/groups/{group_id}/dismiss_group
+POST /api/v1/devices/groups/{group_uuid}/dismiss_group
 Response: {
-  "group_id": 1
+  "group_uuid": "..."
 }
 ```
 

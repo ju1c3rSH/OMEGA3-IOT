@@ -23,7 +23,7 @@ type TypedInstancePropertyItem struct {
 	Meta  PropertyMeta `json:"meta"`
 }
 
-//TODO 这里是设备通过MQTT上传的重要节点
+// TypedValue 表示设备通过MQTT上传的类型化属性值
 
 type TypedValue struct {
 	V         interface{} `json:"v"`

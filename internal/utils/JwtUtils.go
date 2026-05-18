@@ -9,11 +9,11 @@ import (
 
 var jwtSecret = os.Getenv("JWT_SECRET")
 
-// TODO 不能只用JWT,面试中被嘲笑Token放在redis里，该如何应对这种情况呢？ - 花宝宝的回答 - 知乎
-//https://www.zhihu.com/question/12853133755/answer/2014974048233365651
+// JWT认证说明：当前使用无状态JWT方案。若需支持token撤销/黑名单，可引入Redis存储。
+// 参考：https://www.zhihu.com/question/12853133755/answer/2014974048233365651
 type UserClaims struct {
 	UUID     string `json:"uuid"`
-	UserName string `json:"id" example:"dev_001"`
+	UserName string `json:"username" example:"dev_001"`
 	Role     int    `json:"role"`
 	jwt.StandardClaims
 }

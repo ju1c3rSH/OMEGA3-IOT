@@ -27,8 +27,8 @@ type UserExtra struct {
 	ServiceToken string `json:"service_token"`
 }
 type RegUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `form:"username" json:"username" binding:"required"`
+	Password string `form:"password" json:"password" binding:"required"`
 }
 
 type BindDeviceByRegCode struct {
@@ -38,8 +38,9 @@ type BindDeviceByRegCode struct {
 }
 
 type LoginUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" form:"username" binding:"required"`
+
+	Password string `json:"password" form:"password" binding:"required"`
 }
 
 func (c *User) SetPassword(password string) error {
