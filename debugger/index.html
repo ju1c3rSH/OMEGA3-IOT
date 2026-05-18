@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OMEGA3-IOT Debugger</title>
+    <!-- Local cached fonts -->
+    <link href="css/fonts.css" rel="stylesheet">
+    <!-- Application styles -->
+    <link href="css/styles.css" rel="stylesheet">
+</head>
+<body>
+
+<header>
+    <div class="logo"><span class="material-symbols-outlined">hub</span> OMEGA3-IOT <span style="font-weight:normal; opacity:0.6; font-size:0.8rem"></span></div>
+    <div class="row" style="width: auto; align-items: center;">
+        <input type="text" id="base_url" value="http://localhost:27015" placeholder="API Base URL" style="width:240px">
+        <div id="auth_status" class="status-pill">● 未认证</div>
+        <button class="btn sec" onclick="clearStorage()" style="padding:4px 8px">重置</button>
+    </div>
+</header>
+
+<div class="layout-container">
+
+    <!-- Left Column: User & Registration -->
+    <div class="col">
+        <!-- User Auth -->
+        <div class="card">
+            <div class="card-header"><span>用户认证</span><span class="method-badge m-post">AUTH</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field"><label>用户名</label><input type="text" id="user_name" value="admin"></div>
+                    <div class="field"><label>密码</label><input type="password" id="user_pass" value="12345678"></div>
+                </div>
+                <div class="row">
+                    <button class="btn outline" onclick="doAuth('/users/register')">注册</button>
+                    <button class="btn" onclick="doAuth('/users/login')">登录</button>
+                </div>
+                <div class="field">
+                    <label>JWT Token</label>
+                    <input type="text" id="jwt_token" placeholder="Login to get token" readonly style="background:#f8fafc; font-family:monospace; font-size:0.7rem">
+                </div>
+            </div>
+        </div>
+
+        <!-- Registration Flow -->
+        <div class="card">
+            <div class="card-header"><span>Device Registration</span></div>
+            <div class="card-body">
+                <div class="tabs" id="reg_tabs">
+                    <div class="tab active" onclick="switchRegTab('anon')">1. 匿名注册 (设备端)</div>
+                    <div class="tab" onclick="switchRegTab('bind')">2. 用户绑定</div>
+                </div>
+
+                <div id="panel-anon">
+                    <div class="field"><label>设备类型 ID</label><input type="number" id="reg_type_id" value="1"></div>
+                    <button class="btn sec" onclick="registerAnon()" style="margin-top:8px">
+                        <span class="method-badge m-post">POST</span> 获取注册凭证
+                    </button>
+                    <div id="reg_result" style="margin-top:8px; font-size:0.7rem; color:#475569; background:#f1f5f9; padding:6px; border-radius:4px; display:none; white-space:pre"></div>
+                </div>
+
+                <div id="panel-bind" style="display:none">
+                    <div class="field"><label>注册码 (reg_code)</label><input type="text" id="bind_code" placeholder="如 A0WU@HG6"></div>
+                    <div class="field"><label>设备昵称 (nick)</label><input type="text" id="bind_nick" value="我的新设备"></div>
+                    <button class="btn" onclick="bindDevice()">
+                        <span class="method-badge m-post">POST</span> 绑定到我的账号
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Device Group (使用 group_uuid) -->
+        <div class="card">
+            <div class="card-header"><span>设备组管理 (UUID)</span><span class="method-badge m-post">GROUP</span></div>
+            <div class="card-body">
+                <div class="field"><label>组名称</label><input type="text" id="group_name" placeholder="输入组名"></div>
+                <button class="btn outline" onclick="createGroup()">创建新组</button>
+                <hr style="border:0; border-top:1px solid #eee; margin:4px 0">
+                <div class="field"><label>组 UUID (用于加入/退出)</label><input type="text" id="group_uuid_op" placeholder="输入组UUID"></div>
+                <div class="row">
+                    <button class="btn sec" onclick="groupOp('join')">加入组</button>
+                    <button class="btn sec" onclick="groupOp('quit')">退出组</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Center Column: Control & List -->
+    <div class="col">
+        <!-- Target Context -->
+        <div class="card" style="border-left: 4px solid var(--primary);">
+            <div class="card-header"><span>操作上下文 (目标设备)</span></div>
+            <div class="card-body">
+                <div class="row" style="align-items: flex-end;">
+                    <div class="field" style="flex:2"><label>当前目标 instance_uuid</label><input type="text" id="target_uuid" placeholder="从列表选择或手动输入" style="font-family:monospace; color:var(--primary); font-weight:500"></div>
+                    <button class="btn outline" onclick="refreshDeviceList()" style="width:120px; height:34px"><span class="material-symbols-outlined" style="font-size:1rem">refresh</span> 刷新列表</button>
+                </div>
+                <div id="device_container" style="max-height: 180px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 4px;">
+                    <div style="text-align:center; padding:20px; color:#94a3b8; font-size:0.8rem">暂无设备，请刷新</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MQTT Action -->
+        <div class="card">
+            <div class="card-header"><span>指令下发 (actions)</span><span class="method-badge m-post">ACTION</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field" style="flex:1"><label>Command</label><input type="text" id="mqtt_cmd" value="reboot"></div>
+                    <div class="field" style="flex:2"><label>Params (JSON)</label><input type="text" id="mqtt_params" value='{"delay_sec": 5}'></div>
+                </div>
+                <button class="btn" onclick="sendAction()">发送指令</button>
+            </div>
+        </div>
+
+        <!-- History Data -->
+        <div class="card">
+            <div class="card-header"><span>历史数据查询</span><span class="method-badge m-post">DATA</span></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field"><label>开始时间 (Unix)</label><input type="number" id="hist_start"></div>
+                    <div class="field"><label>结束时间 (Unix)</label><input type="number" id="hist_end"></div>
+                </div>
+                <div class="field">
+                    <label>属性列表 (JSON Array)</label>
+                    <input type="text" id="hist_props" value='["battery_level"]'>
+                </div>
+                <div class="row">
+                    <div class="field"><label>Limit</label><input type="number" id="hist_limit" value="100"></div>
+                    <button class="btn sec" style="align-self: flex-end; height:34px" onclick="queryHistory()">查询历史</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Logs & Shares -->
+    <div class="col">
+        <!-- Log Explorer -->
+        <div class="card">
+            <div class="card-header"><span>系统日志 (IoTDB)</span><span class="method-badge m-get">LOG</span></div>
+            <div class="card-body">
+                <div class="field">
+                    <label>查询类型</label>
+                    <select id="log_type">
+                        <option value="device">设备日志 (device)</option>
+                        <option value="user">用户日志 (user)</option>
+                    </select>
+                </div>
+                <button class="btn outline" onclick="querySystemLogs()">查询最近50条</button>
+                <div style="font-size: 0.65rem; color: #94a3b8; margin-top:4px">使用 start_time / end_time 范围</div>
+            </div>
+        </div>
+
+        <!-- Sharing -->
+        <div class="card">
+            <div class="card-header"><span>设备分享</span><span class="method-badge m-post">SHARE</span></div>
+            <div class="card-body">
+                <div class="field"><label>分享给用户 UUID (shared_with_uuid)</label><input type="text" id="share_user_uuid" placeholder="目标用户UUID"></div>
+                <div class="field">
+                    <label>权限</label>
+                    <select id="share_perm">
+                        <option value="read">只读 (read)</option>
+                        <option value="write">可操作 (write)</option>
+                        <option value="read_write" selected>完全 (read_write)</option>
+                    </select>
+                </div>
+                <button class="btn sec" onclick="shareDevice()">执行分享</button>
+            </div>
+        </div>
+
+        <!-- Info -->
+        <div class="card" style="background: transparent; border-style: dashed;">
+            <div class="card-body" style="font-size: 0.75rem; color: #64748b; line-height: 1.5;">
+                <p><strong>✅ 实际响应兼容:</strong></p>
+                <p>• 设备列表使用 <code>instances</code> 字段</p>
+                <p>• 支持无标准包装的直接数据返回</p>
+                <p>• 200状态码不再误标为错误</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Console Footer -->
+<div class="console">
+    <div class="console-top">
+        <span>DEBUG LOGS (兼容实际响应)</span>
+        <span id="log-count" style="opacity: 0.7;">0 entries</span>
+        <span onclick="document.getElementById('log-output').innerHTML=''" style="cursor:pointer">CLEAR</span>
+    </div>
+    <div id="log-output"></div>
+</div>
+
+<!-- Application JavaScript -->
+<script src="js/app.js"></script>
+</body>
+</html>

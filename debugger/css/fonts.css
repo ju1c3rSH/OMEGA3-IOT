@@ -1,0 +1,66 @@
+/* OMEGA3-IOT Debugger Fonts
+
+   This file defines font-face declarations for the debugger.
+   Fonts are loaded from local cache first, with fallback to Google Fonts CDN.
+
+   To cache fonts locally:
+   1. Run: powershell -ExecutionPolicy Bypass -File download-fonts.ps1
+   2. Or manually download font files to assets/fonts/ folder
+*/
+
+/* JetBrains Mono - Local cache */
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/jetbrains-mono-v18-latin-regular.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../assets/fonts/jetbrains-mono-v18-latin-500.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2') format('woff2');
+}
+
+/* Roboto - Local cache */
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v32-latin-regular.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/roboto/v32/KFOmCnqEu92Fr1Mu4mxK.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v32-latin-500.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/roboto/v32/KFOlCnqEu92Fr1MmEU9fBBc4.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Roboto';
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+    src: url('../assets/fonts/roboto-v32-latin-700.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/roboto/v32/KFOlCnqEu92Fr1MmWUlfBBc4.woff2') format('woff2');
+}
+
+/* Material Symbols Outlined - Local cache */
+@font-face {
+    font-family: 'Material Symbols Outlined';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('../assets/fonts/material-symbols-outlined.woff2') format('woff2'),
+         url('https://fonts.gstatic.com/s/materialsymbolsoutlined/v150/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2') format('woff2');
+}

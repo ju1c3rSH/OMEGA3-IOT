@@ -25,7 +25,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth) {
 	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60).RateLimitMiddleware())
 
 	v1.GET("/test", func(c *gin.Context) {
@@ -44,8 +44,9 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 		userGroup.POST("/login", userHandler.Login)
 
 		userProtected := userGroup.Group("")
-		userProtected.Use(MiddleWares.JwtAuthMiddleWare())
+		userProtected.Use(jwtAuth.JwtAuthMiddleWare())
 		{
+			userProtected.POST("/logout", userHandler.Logout)
 			userProtected.GET("/getUserAllDevices", userHandler.GetUserAllDevices)
 			userProtected.GET("/info", userHandler.GetUserInfo)
 			userProtected.POST("/addDevice", deviceHandler.AddDevice)
@@ -54,7 +55,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	}
 
 	protected := v1.Group("/")
-	protected.Use(MiddleWares.JwtAuthMiddleWare())
+	protected.Use(jwtAuth.JwtAuthMiddleWare())
 	{
 		protected.POST("/devices/:instance_uuid/getHistoryData", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "read"), GetDeviceHistoryHandlerFactory(deviceService))
 		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), SendActionHandlerFactory(mqttService))
@@ -69,7 +70,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	}
 
 	usersMe := v1.Group("/users/me")
-	usersMe.Use(MiddleWares.JwtAuthMiddleWare())
+	usersMe.Use(jwtAuth.JwtAuthMiddleWare())
 	{
 		usersMe.GET("/device_groups", deviceGroupHandler.GetGroups)
 	}
@@ -80,7 +81,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	}
 
 	logGroup := v1.Group("/logs")
-	logGroup.Use(MiddleWares.JwtAuthMiddleWare())
+	logGroup.Use(jwtAuth.JwtAuthMiddleWare())
 	{
 		logGroup.GET("/device", logHandler.QueryDeviceLogs)
 		logGroup.POST("/device/upload", logHandler.UploadDeviceLog)

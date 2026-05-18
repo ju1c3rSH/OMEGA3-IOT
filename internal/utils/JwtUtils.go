@@ -9,18 +9,20 @@ import (
 
 var jwtSecret = os.Getenv("JWT_SECRET")
 
-// JWT认证说明：当前使用无状态JWT方案。若需支持token撤销/黑名单，可引入Redis存储。
-// 参考：https://www.zhihu.com/question/12853133755/answer/2014974048233365651
+const TokenTTL = 24 * time.Hour
+
 type UserClaims struct {
+	JTI      string `json:"jti"`
 	UUID     string `json:"uuid"`
 	UserName string `json:"username" example:"dev_001"`
 	Role     int    `json:"role"`
 	jwt.StandardClaims
 }
 
-func GenerateToken(username string, userUUID string, role int) (string, error) {
-	expirationTime := time.Now().Add(24 * time.Hour).Unix()
+func GenerateToken(username string, userUUID string, role int, jti string) (string, error) {
+	expirationTime := time.Now().Add(TokenTTL).Unix()
 	claims := UserClaims{
+		JTI:      jti,
 		UserName: username,
 		Role:     role,
 		UUID:     userUUID,
@@ -65,5 +67,6 @@ func RefreshToken(tokenString string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return GenerateToken(claims.UserName, claims.UUID, claims.Role)
+	newJTI := GenerateUUID().String()
+	return GenerateToken(claims.UserName, claims.UUID, claims.Role, newJTI)
 }

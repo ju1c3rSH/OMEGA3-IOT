@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"net/http"
+	"time"
 )
 
 /*
@@ -17,12 +18,14 @@ import (
 	}
 */
 type UserHandler struct {
-	userService *service.UserService
+	userService           *service.UserService
+	tokenBlacklistService *service.TokenBlacklistService
 }
 
-func NewUserHandler(userSvc *service.UserService) *UserHandler {
+func NewUserHandler(userSvc *service.UserService, blacklistSvc *service.TokenBlacklistService) *UserHandler {
 	return &UserHandler{
-		userService: userSvc,
+		userService:           userSvc,
+		tokenBlacklistService: blacklistSvc,
 	}
 }
 
@@ -87,6 +90,24 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	response := types.NewSuccessResponseWithCode(loginInfo, http.StatusOK, "Login successful")
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *UserHandler) Logout(c *gin.Context) {
+	jti, _ := c.Get("jti")
+	expiresAt, _ := c.Get("ExpiresAt")
+	remaining := time.Until(time.Unix(expiresAt.(int64), 0))
+	if remaining <= 0 {
+		c.JSON(http.StatusOK, types.NewSuccessResponse(nil))
+		return
+	}
+	err := h.tokenBlacklistService.BlacklistToken(c.Request.Context(), jti.(string), remaining)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(http.StatusInternalServerError, "Failed to logout", err.Error()))
+		return
+	}
+	// Clear the Authorization cookie if the client uses cookie-based auth
+	c.SetCookie("Authorization", "", -1, "/", "", false, true)
+	c.JSON(http.StatusOK, types.NewSuccessResponseWithCode(nil, http.StatusOK, "Logged out successfully"))
 }
 
 func (h *UserHandler) GetUserInfo(c *gin.Context) {

@@ -32,6 +32,12 @@ type Config struct {
 		QueryTimeoutMs int64  `mapstructure:"queryTimeoutMs"`
 		Pool           Pool   `mapstructure:"pool"`
 	}
+	Redis struct {
+		Host     string `mapstructure:"host"`
+		Port     int    `mapstructure:"port"`
+		Password string `mapstructure:"password"`
+		DB       int    `mapstructure:"db"`
+	} `mapstructure:"redis"`
 }
 
 type Broker struct {
@@ -261,6 +267,12 @@ func defineFlags() {
 	pflag.Bool("mqtt.client.clean_session", true, "MQTT 清理会话")
 	pflag.Bool("mqtt.client.auto_reconnect", true, "MQTT 自动重连")
 	pflag.Int("mqtt.client.qos", 1, "MQTT QoS 级别 (0,1,2)")
+
+	// Redis配置
+	pflag.String("redis.host", "localhost", "Redis Host")
+	pflag.Int("redis.port", 6379, "Redis Port")
+	pflag.String("redis.password", "", "Redis Password")
+	pflag.Int("redis.db", 0, "Redis DB number")
 
 	pflag.StringP("config", "c", "", "配置文件路径 (可选)")
 

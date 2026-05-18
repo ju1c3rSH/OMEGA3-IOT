@@ -17,4 +17,10 @@ IoTDB:
     timeout: 60000
     fetchMetadataAuto: false
 
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
 
