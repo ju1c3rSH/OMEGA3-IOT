@@ -389,7 +389,7 @@ func ShareDeviceHandlerFactory(deviceShareService *service.DeviceShareService) g
 		}
 
 		response := types.NewSuccessResponseWithCode("[]", http.StatusOK, "Device shared successfully")
-		c.JSON(http.StatusCreated, response)
+		c.JSON(http.StatusOK, response)
 	}
 }
 

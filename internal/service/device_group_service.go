@@ -35,11 +35,11 @@ func NewDeviceGroupService(db *gorm.DB, iotdbClient *db.IOTDBClient, loggerServi
 	}
 }
 
-func (s *DeviceGroupService) CreateGroup(name, description string, ownerID int64) (*model.DeviceGroup, error) {
+func (s *DeviceGroupService) CreateGroup(name, description string, ownerUUID string) (*model.DeviceGroup, error) {
 	group := &model.DeviceGroup{
-		ID:          utils.GenerateSnowflakeID(),
+		GroupUUID:   utils.GenerateUUID().String(),
 		Name:        name,
-		OwnerID:     ownerID,
+		OwnerUUID:   ownerUUID,
 		Description: description,
 		Valid:       1,
 		CreatedAt:   time.Now(),
@@ -47,38 +47,38 @@ func (s *DeviceGroupService) CreateGroup(name, description string, ownerID int64
 	}
 
 	if err := s.groupRepo.CreateGroup(group); err != nil {
-		log.Printf("[DeviceGroupService] Failed to create group: owner_id=%d, error=%v", ownerID, err)
+		log.Printf("[DeviceGroupService] Failed to create group: owner_uuid=%s, error=%v", ownerUUID, err)
 		return nil, fmt.Errorf("failed to create group: %w", err)
 	}
 
-	logEvent := logger.NewUserLogEvent(fmt.Sprintf("%d", ownerID), logger.LogLevelInfo,
+	logEvent := logger.NewUserLogEvent(ownerUUID, logger.LogLevelInfo,
 		fmt.Sprintf("Group created: %s", name),
 		logger.LogEventGroupCreated)
 	logEvent.Metadata = map[string]interface{}{
-		"group_id":    group.ID,
+		"group_uuid":  group.GroupUUID,
 		"group_name":  name,
-		"owner_id":    ownerID,
+		"owner_uuid":  ownerUUID,
 	}
 	s.loggerService.EmitUserLog(logEvent)
 
-	s.reportIotdbMetric("GROUP_CREATED", ownerID)
+	s.reportIotdbMetric("GROUP_CREATED", utils.ParseUserIDFromUUID(ownerUUID))
 
 	return group, nil
 }
 
-func (s *DeviceGroupService) JoinGroup(groupID int64, deviceUUID string, userUUID string) error {
+func (s *DeviceGroupService) JoinGroup(groupUUID string, deviceUUID string, userUUID string) error {
 	// 验证 UUID 格式
 	if deviceUUID == "" {
 		return fmt.Errorf("device uuid is required")
 	}
 
-	group, err := s.groupRepo.GetGroupByID(groupID)
+	group, err := s.groupRepo.GetGroupByUUID(groupUUID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			log.Printf("[DeviceGroupService] Group not found: group_id=%d, user_uuid=%s", groupID, userUUID)
+			log.Printf("[DeviceGroupService] Group not found: group_uuid=%s, user_uuid=%s", groupUUID, userUUID)
 			return fmt.Errorf("invalid group")
 		}
-		log.Printf("[DeviceGroupService] Failed to get group: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to get group: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("failed to get group: %w", err)
 	}
 
@@ -94,12 +94,12 @@ func (s *DeviceGroupService) JoinGroup(groupID int64, deviceUUID string, userUUI
 		return fmt.Errorf("device access denied")
 	}
 
-	if group.OwnerID != utils.ParseUserIDFromUUID(userUUID) {
-		log.Printf("[DeviceGroupService] Permission denied: group_id=%d, user_uuid=%s, owner_id=%d", groupID, userUUID, group.OwnerID)
+	if group.OwnerUUID != userUUID {
+		log.Printf("[DeviceGroupService] Permission denied: group_uuid=%s, user_uuid=%s, owner_uuid=%s", groupUUID, userUUID, group.OwnerUUID)
 		return fmt.Errorf("permission denied")
 	}
 
-	existingRelation, err := s.groupRepo.GetRelationByGroupAndDevice(groupID, deviceUUID)
+	existingRelation, err := s.groupRepo.GetRelationByGroupAndDevice(groupUUID, deviceUUID)
 	if err == nil && existingRelation != nil {
 		if existingRelation.Valid == 1 {
 			return nil
@@ -107,19 +107,19 @@ func (s *DeviceGroupService) JoinGroup(groupID int64, deviceUUID string, userUUI
 		existingRelation.Valid = 1
 		existingRelation.JoinedAt = time.Now()
 		if updateErr := s.groupRepo.UpdateDeviceGroupRelation(existingRelation); updateErr != nil {
-			log.Printf("[DeviceGroupService] Failed to update relation: group_id=%d, device_uuid=%s, error=%v", groupID, deviceUUID, updateErr)
+			log.Printf("[DeviceGroupService] Failed to update relation: group_uuid=%s, device_uuid=%s, error=%v", groupUUID, deviceUUID, updateErr)
 			return fmt.Errorf("failed to join group: %w", updateErr)
 		}
 	} else {
 		relation := &model.DeviceGroupRelation{
-			GroupID:    groupID,
+			GroupUUID:  groupUUID,
 			DeviceUUID: deviceUUID,
 			JoinedAt:   time.Now(),
 			Valid:      1,
 		}
 		if createErr := s.groupRepo.AddDeviceToGroup(relation); createErr != nil {
 			if isDuplicateKeyError(createErr) {
-				existingRelation, getErr := s.groupRepo.GetRelationByGroupAndDevice(groupID, deviceUUID)
+				existingRelation, getErr := s.groupRepo.GetRelationByGroupAndDevice(groupUUID, deviceUUID)
 				if getErr == nil && existingRelation != nil {
 					existingRelation.Valid = 1
 					existingRelation.JoinedAt = time.Now()
@@ -127,16 +127,16 @@ func (s *DeviceGroupService) JoinGroup(groupID int64, deviceUUID string, userUUI
 					return nil
 				}
 			}
-			log.Printf("[DeviceGroupService] Failed to add device to group: group_id=%d, device_uuid=%s, error=%v", groupID, deviceUUID, createErr)
+			log.Printf("[DeviceGroupService] Failed to add device to group: group_uuid=%s, device_uuid=%s, error=%v", groupUUID, deviceUUID, createErr)
 			return fmt.Errorf("failed to join group: %w", createErr)
 		}
 	}
 
 	logEvent := logger.NewUserLogEvent(userUUID, logger.LogLevelInfo,
-		fmt.Sprintf("Device joined group: device_uuid=%s, group_id=%d", deviceUUID, groupID),
+		fmt.Sprintf("Device joined group: device_uuid=%s, group_uuid=%s", deviceUUID, groupUUID),
 		logger.LogEventDeviceJoinedGroup)
 	logEvent.Metadata = map[string]interface{}{
-		"group_id":    groupID,
+		"group_uuid":  groupUUID,
 		"device_uuid": deviceUUID,
 		"group_name":  group.Name,
 	}
@@ -147,19 +147,19 @@ func (s *DeviceGroupService) JoinGroup(groupID int64, deviceUUID string, userUUI
 	return nil
 }
 
-func (s *DeviceGroupService) QuitGroup(groupID int64, deviceUUID string, userUUID string) error {
+func (s *DeviceGroupService) QuitGroup(groupUUID string, deviceUUID string, userUUID string) error {
 	// 验证 UUID 格式
 	if deviceUUID == "" {
 		return fmt.Errorf("device uuid is required")
 	}
 
-	group, err := s.groupRepo.GetGroupByID(groupID)
+	group, err := s.groupRepo.GetGroupByUUID(groupUUID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			log.Printf("[DeviceGroupService] Group not found: group_id=%d, user_uuid=%s", groupID, userUUID)
+			log.Printf("[DeviceGroupService] Group not found: group_uuid=%s, user_uuid=%s", groupUUID, userUUID)
 			return fmt.Errorf("invalid group")
 		}
-		log.Printf("[DeviceGroupService] Failed to get group: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to get group: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("failed to get group: %w", err)
 	}
 
@@ -175,21 +175,21 @@ func (s *DeviceGroupService) QuitGroup(groupID int64, deviceUUID string, userUUI
 		return fmt.Errorf("device access denied")
 	}
 
-	if group.OwnerID != utils.ParseUserIDFromUUID(userUUID) {
-		log.Printf("[DeviceGroupService] Permission denied: group_id=%d, user_uuid=%s, owner_id=%d", groupID, userUUID, group.OwnerID)
+	if group.OwnerUUID != userUUID {
+		log.Printf("[DeviceGroupService] Permission denied: group_uuid=%s, user_uuid=%s, owner_uuid=%s", groupUUID, userUUID, group.OwnerUUID)
 		return fmt.Errorf("permission denied")
 	}
 
-	if err := s.groupRepo.RemoveDeviceFromGroup(groupID, deviceUUID); err != nil {
-		log.Printf("[DeviceGroupService] Failed to remove device from group: group_id=%d, device_uuid=%s, error=%v", groupID, deviceUUID, err)
+	if err := s.groupRepo.RemoveDeviceFromGroup(groupUUID, deviceUUID); err != nil {
+		log.Printf("[DeviceGroupService] Failed to remove device from group: group_uuid=%s, device_uuid=%s, error=%v", groupUUID, deviceUUID, err)
 		return fmt.Errorf("failed to quit group: %w", err)
 	}
 
 	logEvent := logger.NewUserLogEvent(userUUID, logger.LogLevelInfo,
-		fmt.Sprintf("Device quit group: device_uuid=%s, group_id=%d", deviceUUID, groupID),
+		fmt.Sprintf("Device quit group: device_uuid=%s, group_uuid=%s", deviceUUID, groupUUID),
 		logger.LogEventDeviceQuitGroup)
 	logEvent.Metadata = map[string]interface{}{
-		"group_id":    groupID,
+		"group_uuid":  groupUUID,
 		"device_uuid": deviceUUID,
 		"group_name":  group.Name,
 	}
@@ -200,7 +200,7 @@ func (s *DeviceGroupService) QuitGroup(groupID int64, deviceUUID string, userUUI
 	return nil
 }
 
-func (s *DeviceGroupService) GetGroups(ownerID int64, page, pageSize int) ([]model.DeviceGroup, int64, error) {
+func (s *DeviceGroupService) GetGroups(ownerUUID string, page, pageSize int) ([]model.DeviceGroup, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -208,22 +208,22 @@ func (s *DeviceGroupService) GetGroups(ownerID int64, page, pageSize int) ([]mod
 		pageSize = 10
 	}
 
-	return s.groupRepo.GetGroupsByOwner(ownerID, page, pageSize)
+	return s.groupRepo.GetGroupsByOwner(ownerUUID, page, pageSize)
 }
 
-func (s *DeviceGroupService) GetGroupMembers(groupID int64, userUUID string, page, pageSize int) ([]model.GroupMemberDevice, int64, error) {
-	group, err := s.groupRepo.GetGroupByID(groupID)
+func (s *DeviceGroupService) GetGroupMembers(groupUUID string, userUUID string, page, pageSize int) ([]model.GroupMemberDevice, int64, error) {
+	group, err := s.groupRepo.GetGroupByUUID(groupUUID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			log.Printf("[DeviceGroupService] Group not found for members query: group_id=%d, user_uuid=%s", groupID, userUUID)
+			log.Printf("[DeviceGroupService] Group not found for members query: group_uuid=%s, user_uuid=%s", groupUUID, userUUID)
 			return nil, 0, fmt.Errorf("Could not find a match group")
 		}
-		log.Printf("[DeviceGroupService] Failed to get group for members query: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to get group for members query: group_uuid=%s, error=%v", groupUUID, err)
 		return nil, 0, fmt.Errorf("Could not find a match group")
 	}
 
-	if group.OwnerID != utils.ParseUserIDFromUUID(userUUID) {
-		log.Printf("[DeviceGroupService] Permission denied for members query: group_id=%d, user_uuid=%s, owner_id=%d", groupID, userUUID, group.OwnerID)
+	if group.OwnerUUID != userUUID {
+		log.Printf("[DeviceGroupService] Permission denied for members query: group_uuid=%s, user_uuid=%s, owner_uuid=%s", groupUUID, userUUID, group.OwnerUUID)
 		return nil, 0, fmt.Errorf("Could not find a match group")
 	}
 
@@ -234,47 +234,47 @@ func (s *DeviceGroupService) GetGroupMembers(groupID int64, userUUID string, pag
 		pageSize = 10
 	}
 
-	return s.groupRepo.GetGroupMembers(groupID, page, pageSize)
+	return s.groupRepo.GetGroupMembers(groupUUID, page, pageSize)
 }
 
-func (s *DeviceGroupService) DismissGroup(groupID int64, userUUID string) error {
-	group, err := s.groupRepo.GetGroupByID(groupID)
+func (s *DeviceGroupService) DismissGroup(groupUUID string, userUUID string) error {
+	group, err := s.groupRepo.GetGroupByUUID(groupUUID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
-			log.Printf("[DeviceGroupService] Group not found for dismiss: group_id=%d, user_uuid=%s", groupID, userUUID)
+			log.Printf("[DeviceGroupService] Group not found for dismiss: group_uuid=%s, user_uuid=%s", groupUUID, userUUID)
 			return fmt.Errorf("Could not find a match group")
 		}
-		log.Printf("[DeviceGroupService] Failed to get group for dismiss: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to get group for dismiss: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("Could not find a match group")
 	}
 
-	if group.OwnerID != utils.ParseUserIDFromUUID(userUUID) {
-		log.Printf("[DeviceGroupService] Permission denied for dismiss: group_id=%d, user_uuid=%s, owner_id=%d", groupID, userUUID, group.OwnerID)
+	if group.OwnerUUID != userUUID {
+		log.Printf("[DeviceGroupService] Permission denied for dismiss: group_uuid=%s, user_uuid=%s, owner_uuid=%s", groupUUID, userUUID, group.OwnerUUID)
 		return fmt.Errorf("Could not find a match group")
 	}
 
 	tx := s.db.Begin()
 	if tx.Error != nil {
-		log.Printf("[DeviceGroupService] Failed to begin transaction: group_id=%d, error=%v", groupID, tx.Error)
+		log.Printf("[DeviceGroupService] Failed to begin transaction: group_uuid=%s, error=%v", groupUUID, tx.Error)
 		return fmt.Errorf("failed to dismiss group: %w", tx.Error)
 	}
 
 	groupRepoWithTx := s.groupRepo.WithTx(tx)
 
-	if err := groupRepoWithTx.DismissGroupWithTx(tx, groupID); err != nil {
+	if err := groupRepoWithTx.DismissGroupWithTx(tx, groupUUID); err != nil {
 		tx.Rollback()
-		log.Printf("[DeviceGroupService] Failed to dismiss group: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to dismiss group: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("failed to dismiss group: %w", err)
 	}
 
-	if err := groupRepoWithTx.RemoveAllDevicesFromGroupWithTx(tx, groupID); err != nil {
+	if err := groupRepoWithTx.RemoveAllDevicesFromGroupWithTx(tx, groupUUID); err != nil {
 		tx.Rollback()
-		log.Printf("[DeviceGroupService] Failed to remove devices from group: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to remove devices from group: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("failed to dismiss group: %w", err)
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		log.Printf("[DeviceGroupService] Failed to commit transaction: group_id=%d, error=%v", groupID, err)
+		log.Printf("[DeviceGroupService] Failed to commit transaction: group_uuid=%s, error=%v", groupUUID, err)
 		return fmt.Errorf("failed to dismiss group: %w", err)
 	}
 
@@ -282,7 +282,7 @@ func (s *DeviceGroupService) DismissGroup(groupID int64, userUUID string) error 
 		fmt.Sprintf("Group dismissed: %s", group.Name),
 		logger.LogEventGroupDismissed)
 	logEvent.Metadata = map[string]interface{}{
-		"group_id":   groupID,
+		"group_uuid": groupUUID,
 		"group_name": group.Name,
 	}
 	s.loggerService.EmitUserLog(logEvent)
