@@ -160,7 +160,7 @@ func (h *UserHandler) GetUserAllDevices(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
-	c.JSON(http.StatusOK, responseData)
+	c.JSON(http.StatusOK, types.NewSuccessResponse(responseData))
 
 }
 func (h *UserHandler) BindDeviceByRegCode(c *gin.Context) {
