@@ -1,6 +1,7 @@
 package MiddleWares
 
 import (
+	"OMEGA3-IOT/internal/types"
 	"OMEGA3-IOT/internal/utils"
 	"github.com/gin-gonic/gin"
 	"net/http"
@@ -16,7 +17,7 @@ func CookieAuthMiddleware() gin.HandlerFunc {
 		if err == nil && authInCookie != nil {
 			tokenString = authInCookie.Value
 		} else {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "No Authorization in cookie"})
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "No Authorization in cookie"))
 			context.Abort()
 			return
 		}
@@ -25,13 +26,13 @@ func CookieAuthMiddleware() gin.HandlerFunc {
 		}
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Invalid or expired token"))
 			context.Abort()
 			return
 
 		}
 		if claims.ExpiresAt < time.Now().Unix() {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Invalid or expired token"))
 			context.Abort()
 			return
 		}

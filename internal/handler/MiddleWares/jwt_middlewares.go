@@ -2,6 +2,7 @@ package MiddleWares
 
 import (
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/types"
 	"OMEGA3-IOT/internal/utils"
 	"expvar"
 	"github.com/gin-gonic/gin"
@@ -36,7 +37,7 @@ func (j *JWTAuth) JwtAuthMiddleWare() gin.HandlerFunc {
 			tokenString = authInCookie.Value
 		} else {
 			if authHeader == "" {
-				context.JSON(http.StatusUnauthorized, gin.H{"error": "Neither Nor Authorization in cookie or Authorization header"})
+				context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "No token found in cookie or header"))
 				context.Abort()
 				return
 			} else {
@@ -50,12 +51,12 @@ func (j *JWTAuth) JwtAuthMiddleWare() gin.HandlerFunc {
 		// Parse and validate JWT
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Invalid or expired token"))
 			context.Abort()
 			return
 		}
 		if claims.ExpiresAt < time.Now().Unix() {
-			context.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Invalid or expired token"))
 			context.Abort()
 			return
 		}
@@ -72,7 +73,7 @@ func (j *JWTAuth) JwtAuthMiddleWare() gin.HandlerFunc {
 			}
 			if blacklisted {
 				blacklistHitsTotal.Add(1)
-				context.JSON(http.StatusUnauthorized, gin.H{"error": "Token has been revoked"})
+				context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Token has been revoked"))
 				context.Abort()
 				return
 			}
