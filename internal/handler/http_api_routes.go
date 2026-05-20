@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,12 +31,10 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 
 	v1.GET("/test", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
-		c.JSON(200, gin.H{
-			"message": msg,
-		})
+		c.JSON(200, types.NewSuccessResponseWithCode(gin.H{"message": msg}, 200, "OK"))
 	})
 	v1.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(200, types.NewSuccessResponseWithCode(gin.H{"status": "ok"}, 200, "OK"))
 	})
 
 	userGroup := v1.Group("/users")

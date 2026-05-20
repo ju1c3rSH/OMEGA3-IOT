@@ -232,7 +232,7 @@ func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc 
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")
 		if instanceUUID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid or missing query parameter"})
+			c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Invalid or missing query parameter"))
 			return
 		}
 
@@ -397,15 +397,15 @@ func GetAccessibleDevicesHandlerFactory(deviceShareService *service.DeviceShareS
 	return func(c *gin.Context) {
 		userUUID, exists := c.Get("user_uuid")
 		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+			c.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated"))
 			return
 		}
 
 		response, err := deviceShareService.GetAccessibleDevices(userUUID.(string))
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get devices: " + err.Error()})
+			c.JSON(http.StatusInternalServerError, types.NewErrorResponse(http.StatusInternalServerError, "Failed to get devices", err.Error()))
 			return
 		}
-		c.JSON(http.StatusOK, response)
+		c.JSON(http.StatusOK, types.NewSuccessResponse(response))
 	}
 }

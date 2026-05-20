@@ -1,6 +1,7 @@
 package MiddleWares
 
 import (
+	"OMEGA3-IOT/internal/types"
 	"github.com/gin-gonic/gin"
 	"net/http"
 	"sync"
@@ -53,9 +54,7 @@ func (rl *RateLimiter) RateLimitMiddleware() gin.HandlerFunc {
 		}
 
 		if record.Count >= rl.maxRequests {
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error": "Too many requests, please try again later",
-			})
+			c.JSON(http.StatusTooManyRequests, types.NewErrorResponse(http.StatusTooManyRequests, "Too many requests, please try again later"))
 			c.Abort()
 			return
 		}
