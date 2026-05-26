@@ -13,10 +13,6 @@ import (
 type Properties struct {
 	Items map[string]*TypedInstancePropertyItem `json:"items"`
 }
-type InstancePropertyItem struct {
-	Value string       `json:"value"`
-	Meta  PropertyMeta `json:"meta"`
-}
 
 type TypedInstancePropertyItem struct {
 	Value TypedValue   `json:"value"`
