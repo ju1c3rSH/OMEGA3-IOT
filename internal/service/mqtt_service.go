@@ -3,6 +3,7 @@ package service
 import (
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
+	"OMEGA3-IOT/internal/spec"
 	"OMEGA3-IOT/internal/utils"
 	"context"
 	"encoding/json"
@@ -125,6 +126,36 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 
 	if err := m.deviceService.UpdateDeviceProperties(*instance, rawPropsData); err != nil {
 		log.Printf("Failed to update device properties: %v", err)
+	}
+
+	// Handle event if present
+	if message.Data.Event.EventKey != "" {
+		m.handleEvent(instance, message.Data.Event)
+	}
+}
+
+func (m *MQTTService) handleEvent(instance *model.Instance, event model.DeviceEvent) {
+	typeDef, ok := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+	if !ok {
+		log.Printf("[MQTT] Unknown device type '%s' for event validation", instance.Type)
+		return
+	}
+
+	// Validate event against spec
+	if _, exists := typeDef.Events[event.EventKey]; exists {
+		// Event key is defined in the spec — validate if there's a payload
+		if event.Content != "" {
+			var payload map[string]interface{}
+			if err := json.Unmarshal([]byte(event.Content), &payload); err == nil {
+				if err := spec.ValidateEvent(typeDef, event.EventKey, payload); err != nil {
+					log.Printf("[MQTT] Event validation failed for device %s, event '%s': %v", instance.InstanceUUID, event.EventKey, err)
+					return
+				}
+			}
+		}
+		log.Printf("[MQTT] Received validated event '%s' from device %s (severity: %s)", event.EventKey, instance.InstanceUUID, typeDef.Events[event.EventKey].Severity)
+	} else {
+		log.Printf("[MQTT] Received unknown event '%s' from device %s", event.EventKey, instance.InstanceUUID)
 	}
 }
 

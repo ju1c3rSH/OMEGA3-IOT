@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/internal/utils"
 	"fmt"
 	"github.com/spf13/viper"
+	"log"
 	"sync"
 	"time"
 )
@@ -30,13 +31,6 @@ type Instance struct {
 	Remark      string `gorm:"type:text" json:"remark,omitempty"`
 }
 
-type DeviceTemplate struct {
-	Type        string                  `json:"type" gorm:"primaryKey"`
-	Name        string                  `json:"name"`
-	Description string                  `json:"description"`
-	Properties  map[string]PropertyMeta `json:"properties" gorm:"type:json"`
-	Actions     []ActionMeta            `json:"actions" gorm:"type:json"`
-}
 type DeviceHistoryData struct {
 	Timestamp  int64      `json:"timestamp"`
 	Properties Properties `gorm:"type:json" json:"properties"`
@@ -78,33 +72,14 @@ type DeviceRegistrationRecord struct {
 	//以上信息由QWEN3--CODER生成 （这玩意还挺好用）
 }
 
-/*
-	type DeviceType struct {
-		ID   int    `mapstructure:"id" yaml:"id" json:"id"`
-		Name string `mapsyructure:"name" yaml:"name" json:"name"`
-		//DisplayName string                   `yaml:"display_name" json:"display_name"`
-		Description string                  `mapstructure:"description" yaml:"description" json:"description"`
-		Properties  map[string]PropertyMeta `mapstructure:"description" yaml:"properties" json:"properties"`
-	}
-*/
 type DeviceType struct {
-	ID           int                     `mapstructure:"id" yaml:"id"`
-	Name         string                  `mapstructure:"name" yaml:"name"`
-	Description  string                  `mapstructure:"description" yaml:"description"`
-	Properties   map[string]PropertyMeta `mapstructure:"properties" yaml:"properties"`
-	Capabilities map[string]Capability   `mapstructure:"capabilities" yaml:"capabilities"`
-	Actions      map[string]ActionMeta   `json:"actions"`
-	Events       map[string]DeviceEvent  `mapstructure:"events" yaml:"events"`
-}
-
-/*
-↓无用
-*/
-type DeviceAddTemplate struct {
-	Name        string `json:"name" gorm:"primaryKey"`
-	Description string `json:"description"`
-	Type        int    `json:"type" gorm:"primaryKey"`
-	SN          string `json:"sn" gorm:"primaryKey"`
+	ID           int                     `mapstructure:"id" yaml:"id" json:"id"`
+	Name         string                  `mapstructure:"name" yaml:"name" json:"name"`
+	Description  string                  `mapstructure:"description" yaml:"description" json:"description"`
+	Properties   map[string]PropertyMeta `mapstructure:"properties" yaml:"properties" json:"properties"`
+	Capabilities map[string]Capability   `mapstructure:"capabilities" yaml:"capabilities" json:"capabilities"`
+	Actions      map[string]ActionMeta   `mapstructure:"actions" yaml:"actions" json:"actions"`
+	Events       map[string]EventMeta    `mapstructure:"events" yaml:"events" json:"events"`
 }
 
 type DeviceShare struct {
@@ -124,7 +99,7 @@ type InputParam struct {
 	Type        string      `json:"type" yaml:"type"`
 	Description string      `json:"description" yaml:"description"`
 	Required    bool        `json:"required" yaml:"required"`
-	Range       []int       `json:"range,omitempty" yaml:"range,omitempty"`
+	Range       []float64   `json:"range,omitempty" yaml:"range,omitempty"`
 	Enum        []string    `json:"enum,omitempty" yaml:"enum,omitempty"`
 	Default     interface{} `json:"default,omitempty" yaml:"default,omitempty"`
 }
@@ -172,15 +147,13 @@ func (dtm *DeviceTypeManager) LoadDeviceTypeFromYAML(filePath string) error {
 
 	for i, dt := range deviceTypesConfig.DeviceTypes {
 		deviceType := &dt
-		fmt.Printf("Processing: %+v\n", deviceType)
 
 		if deviceType.Name == "" {
-			fmt.Printf("Warning: Device type %d has empty name\n", i)
+			log.Printf("Warning: Device type %d has empty name\n", i)
 			continue
-			//debug msg...
 		}
 		if deviceType.ID <= 0 {
-			fmt.Printf("Warning: Device type %s has invalid ID\n", deviceType.Name)
+			log.Printf("Warning: Device type %s has invalid ID\n", deviceType.Name)
 			continue
 		}
 
@@ -192,7 +165,6 @@ func (dtm *DeviceTypeManager) LoadDeviceTypeFromYAML(filePath string) error {
 
 func (dtm *DeviceTypeManager) GetByName(name string) (*DeviceType, bool) {
 	dt, exists := dtm.types[name]
-	//fmt.Println(dtm.ids[0])
 	return dt, exists
 }
 
@@ -255,6 +227,3 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 		UpdatedAt:    time.Now(),
 	}, nil
 }
-
-//Let me think , what should i do in next step?shall i put this factory_function to web api directly?maybe not.Because i havent deal the problems in database to save props.After it, i should make a history system to record the changes of the devices,but i dont know how to design a LINEAR Save System....
-//So,deal with the Properties to save in mysql(in Json)First.
