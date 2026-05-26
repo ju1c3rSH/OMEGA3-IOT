@@ -17,9 +17,10 @@ import (
 )
 
 type MQTTService struct {
-	broker        mqtt.Client
-	deviceService *DeviceService
-	loggerService logger.LoggerInterface
+	broker          mqtt.Client
+	deviceService   *DeviceService
+	presenceService *PresenceService
+	loggerService   logger.LoggerInterface
 }
 
 type DeviceMessage struct {
@@ -37,7 +38,7 @@ type Publisher interface {
 	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
 }
 
-func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface) (*MQTTService, error) {
+func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface, presenceService *PresenceService) (*MQTTService, error) {
 	options := mqtt.NewClientOptions()
 	options.AddBroker(brokerURL)
 
@@ -65,9 +66,10 @@ func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerServic
 
 	//deviceSvc := NewDeviceService()
 	service := &MQTTService{
-		broker:        client,
-		deviceService: deviceService,
-		loggerService: loggerService,
+		broker:          client,
+		deviceService:   deviceService,
+		presenceService: presenceService,
+		loggerService:   loggerService,
 	}
 	service.setupSubscription()
 	return service, nil
@@ -126,7 +128,11 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 
 	if err := m.deviceService.UpdateDeviceProperties(*instance, rawPropsData); err != nil {
 		log.Printf("Failed to update device properties: %v", err)
+		return
 	}
+
+	// Mark device online via PresenceService
+	m.presenceService.MarkOnline(deviceUUID)
 
 	// Handle event if present
 	if message.Data.Event.EventKey != "" {
@@ -135,6 +141,13 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 }
 
 func (m *MQTTService) handleEvent(instance *model.Instance, event model.DeviceEvent) {
+	// Check for shutdown/offline events — these take priority
+	if event.EventKey == "shutdown" || event.EventKey == "offline" {
+		m.presenceService.HandleShutdownEvent(instance.InstanceUUID)
+		log.Printf("[MQTT] Device %s sent '%s' event — marked OFFLINE", instance.InstanceUUID, event.EventKey)
+		return
+	}
+
 	typeDef, ok := model.GlobalDeviceTypeManager.GetByName(instance.Type)
 	if !ok {
 		log.Printf("[MQTT] Unknown device type '%s' for event validation", instance.Type)

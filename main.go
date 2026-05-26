@@ -59,8 +59,23 @@ func main() {
 	log.Println("[Main] LoggerService started")
 
 	deviceService := service.NewDeviceService(db.DB, iotdbClient)
+
+	// Create repositories
+	instanceRepo := repository.NewInstanceRepository(db.DB)
+
+	// Initialize PresenceService
+	presenceService := service.NewPresenceService(
+		instanceRepo,
+		eventBus,
+		cfg.DevicePresence.OfflineTimeoutSec,
+		cfg.DevicePresence.CheckIntervalSec,
+	)
+	presenceService.Start()
+	defer presenceService.Stop()
+	log.Println("[Main] PresenceService started")
+
 	newURL := fmt.Sprintf("%s://%s:%d", cfg.MQTT.Broker.Protocol, cfg.MQTT.Broker.Host, cfg.MQTT.Broker.Port)
-	mqttService, err := service.NewMQTTService(newURL, deviceService, loggerService)
+	mqttService, err := service.NewMQTTService(newURL, deviceService, loggerService, presenceService)
 	if err != nil {
 		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
 	}
@@ -68,7 +83,6 @@ func main() {
 
 	// Create repositories
 	userRepo := repository.NewUserRepository(db.DB)
-	instanceRepo := repository.NewInstanceRepository(db.DB)
 	deviceRegistrationRepo := repository.NewDeviceRegistrationRecordRepository(db.DB)
 
 	// Token blacklist
