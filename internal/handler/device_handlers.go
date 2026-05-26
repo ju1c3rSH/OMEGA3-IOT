@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/spec"
 	"OMEGA3-IOT/internal/types"
 	"OMEGA3-IOT/internal/utils"
 	"errors"
@@ -228,7 +229,7 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 	}
 }
 
-func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc {
+func SendActionHandlerFactory(mqttService *service.MQTTService, deviceService *service.DeviceService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")
 		if instanceUUID == "" {
@@ -247,13 +248,34 @@ func SendActionHandlerFactory(mqttService *service.MQTTService) gin.HandlerFunc 
 			return
 		}
 
+		// Look up the device to get its type, then validate the action against the spec
+		instance, err := deviceService.GetDeviceByInstanceUUID(instanceUUID)
+		if err != nil {
+			response := types.NewErrorResponse(http.StatusNotFound, "Device not found", err.Error())
+			c.JSON(http.StatusNotFound, response)
+			return
+		}
+
+		typeDef, ok := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+		if !ok {
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Unknown device type", instance.Type)
+			c.JSON(http.StatusInternalServerError, response)
+			return
+		}
+
+		if err := spec.ValidateAction(typeDef, input.Command, input.Params); err != nil {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Action validation failed", err.Error())
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+
 		actionPayload := model.Action{
 			Command:   input.Command,
 			Params:    input.Params,
 			Timestamp: time.Now().Unix(),
 		}
 
-		err := mqttService.PublishActionToDevice(instanceUUID, actionPayload.Command, actionPayload)
+		err = mqttService.PublishActionToDevice(instanceUUID, actionPayload.Command, actionPayload)
 		if err != nil {
 			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to send action", err.Error())
 			c.JSON(http.StatusInternalServerError, response)

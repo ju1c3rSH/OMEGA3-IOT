@@ -4,6 +4,7 @@ import (
 	"OMEGA3-IOT/internal/db"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
+	"OMEGA3-IOT/internal/spec"
 	"OMEGA3-IOT/internal/utils"
 	"context"
 	"fmt"
@@ -36,12 +37,26 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 	if instance.Properties.Items == nil {
 		instance.Properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 	}
+
+	// Look up the device type spec for validation
+	typeDef, _ := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+
 	for key, value := range data {
 		valueCopy := value
 		va := valueCopy.Value
 
 		if instance.Properties.Items[key] == nil {
 			return fmt.Errorf("failed to update device %s: the key provided was not matched with the properties", instance.InstanceUUID)
+		}
+
+		// Validate against spec if device type is known
+		if typeDef != nil {
+			if propMeta, ok := typeDef.Properties[key]; ok {
+				if err := spec.ValidatePropertyValue(propMeta, va.Raw()); err != nil {
+					log.Printf("[DeviceService] Property validation failed for device %s, key '%s': %v", instance.InstanceUUID, key, err)
+					continue // skip invalid property, don't block other updates
+				}
+			}
 		}
 
 		instance.Properties.Items[key].Value = va
