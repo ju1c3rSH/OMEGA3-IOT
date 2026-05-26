@@ -38,6 +38,10 @@ type Config struct {
 		Password string `mapstructure:"password"`
 		DB       int    `mapstructure:"db"`
 	} `mapstructure:"redis"`
+	DevicePresence struct {
+		OfflineTimeoutSec int `mapstructure:"offline_timeout_sec"`
+		CheckIntervalSec  int `mapstructure:"check_interval_sec"`
+	} `mapstructure:"device_presence"`
 }
 
 type Broker struct {
@@ -270,7 +274,7 @@ func defineFlags() {
 
 	// Redis配置
 	pflag.String("redis.host", "localhost", "Redis Host")
-	pflag.Int("redis.port", 6379, "Redis Port")
+	pflag.Int("redis.port", 22251, "Redis Port")
 	pflag.String("redis.password", "", "Redis Password")
 	pflag.Int("redis.db", 0, "Redis DB number")
 

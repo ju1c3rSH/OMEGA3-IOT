@@ -1,26 +1,27 @@
 database:
-  #mysqldsn: OMEGA3:OMEGA#@tcp(hiffu.maribel:1314)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local
-
+  mysqldsn: "OMEGA3:OMEGA#@tcp(lorelei.lat:46578)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local"
 
 server:
   port: 27015
 
 IoTDB:
-  #host: "your host"
-  #port: 11451
-  #username: usami
-  #password: renko
+  host: "lorelei.lat"
+  port: 6667
+  username: root
+  password: root
   queryTimeoutMs: 4000
   pool:
-
     maxConnections: 5
     timeout: 60000
     fetchMetadataAuto: false
 
 redis:
-  host: localhost
-  port: 6379
+  host: lorelei.lat
+  port: 22251
   password: ""
   db: 0
 
+device_presence:
+  offline_timeout_sec: 300    # 设备无消息超过 300 秒判定离线
+  check_interval_sec: 60     # 后台扫描间隔 60 秒
 
