@@ -27,6 +27,9 @@ func Cors() gin.HandlerFunc {
 }
 
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth) {
+	// Serve uploaded files (avatars, etc.)
+	router.Static("/uploads", "./uploads")
+
 	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60).RateLimitMiddleware())
 
 	v1.GET("/test", func(c *gin.Context) {
@@ -48,6 +51,9 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 			userProtected.POST("/logout", userHandler.Logout)
 			userProtected.GET("/getUserAllDevices", userHandler.GetUserAllDevices)
 			userProtected.GET("/info", userHandler.GetUserInfo)
+			userProtected.PUT("/profile", userHandler.UpdateProfile)
+			userProtected.POST("/avatar", userHandler.UploadAvatar)
+			userProtected.DELETE("/avatar", userHandler.ResetAvatar)
 			userProtected.POST("/addDevice", deviceHandler.AddDevice)
 			userProtected.POST("/bindDeviceByRegCode", userHandler.BindDeviceByRegCode)
 		}
