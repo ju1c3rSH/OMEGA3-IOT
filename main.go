@@ -90,7 +90,11 @@ func main() {
 	tokenBlacklistService := service.NewTokenBlacklistService(tokenBlacklistRepo)
 	log.Println("[Main] TokenBlacklistService created")
 
-	userService = service.NewUserService(mqttService, userRepo, instanceRepo, deviceRegistrationRepo, iotdbClient, loggerService)
+	// Avatar service
+	avatarService := service.NewAvatarService("")
+	log.Println("[Main] AvatarService created")
+
+	userService = service.NewUserService(mqttService, userRepo, instanceRepo, deviceRegistrationRepo, iotdbClient, loggerService, avatarService)
 	log.Println("[Main] UserService created")
 	userHandler := handler.NewUserHandler(userService, tokenBlacklistService)
 	log.Println("[Main] UserHandler created")

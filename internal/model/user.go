@@ -9,6 +9,8 @@ type User struct {
 	ID           uint   `gorm:"primaryKey;autoIncrement"`
 	UserUUID     string `json:"user_uuid" gorm:"uniqueIndex;not null;type:char(36)"`
 	UserName     string `json:"user_name" gorm:"uniqueIndex;not null;size:50" validate:"required,min=3,max=20"`
+	Nickname     string `json:"nickname" gorm:"size:50"`
+	Avatar       string `json:"avatar" gorm:"size:255"`
 	Type         int    `json:"type" example:"1"`
 	Online       bool   `json:"online"`
 	Description  string `json:"description,omitempty"`
@@ -41,6 +43,11 @@ type LoginUser struct {
 	Username string `json:"username" form:"username" binding:"required"`
 
 	Password string `json:"password" form:"password" binding:"required"`
+}
+
+type UpdateProfileRequest struct {
+	Nickname    *string `json:"nickname,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 func (c *User) SetPassword(password string) error {

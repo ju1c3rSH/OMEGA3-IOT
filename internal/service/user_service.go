@@ -8,6 +8,7 @@ import (
 	"OMEGA3-IOT/internal/utils"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"time"
 )
@@ -19,6 +20,7 @@ type UserService struct {
 	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository
 	iotDBClient            *db.IOTDBClient
 	loggerService          logger.LoggerInterface
+	avatarService          *AvatarService
 }
 
 type GetUserAllDevicesResponse struct {
@@ -38,6 +40,7 @@ func NewUserService(
 	deviceRegistrationRepo repository.DeviceRegistrationRecordRepository,
 	iotDBClient *db.IOTDBClient,
 	loggerService logger.LoggerInterface,
+	avatarService *AvatarService,
 ) *UserService {
 	return &UserService{
 		mqttSvc:                mqttSvc,
@@ -46,6 +49,7 @@ func NewUserService(
 		deviceRegistrationRepo: deviceRegistrationRepo,
 		iotDBClient:            iotDBClient,
 		loggerService:          loggerService,
+		avatarService:          avatarService,
 	}
 }
 
@@ -245,4 +249,56 @@ func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) err
 		}
 	}
 	return nil
+}
+
+// UpdateProfile updates the user's nickname and/or description.
+func (s *UserService) UpdateProfile(userUUID string, req model.UpdateProfileRequest) error {
+	fields := make(map[string]interface{})
+	if req.Nickname != nil {
+		fields["nickname"] = *req.Nickname
+	}
+	if req.Description != nil {
+		fields["description"] = *req.Description
+	}
+	if len(fields) == 0 {
+		return fmt.Errorf("no fields to update")
+	}
+	fields["updated_at"] = time.Now().Unix()
+	return s.userRepo.UpdateFields(userUUID, fields)
+}
+
+// UpdateAvatar saves an uploaded avatar image and updates the user's avatar field.
+func (s *UserService) UpdateAvatar(userUUID string, reader io.Reader) (string, error) {
+	avatarURL, err := s.avatarService.SaveAvatar(userUUID, reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to save avatar: %w", err)
+	}
+
+	fields := map[string]interface{}{
+		"avatar":     avatarURL,
+		"updated_at": time.Now().Unix(),
+	}
+	if err := s.userRepo.UpdateFields(userUUID, fields); err != nil {
+		return "", fmt.Errorf("failed to update avatar in database: %w", err)
+	}
+
+	return avatarURL, nil
+}
+
+// ResetAvatar generates a default identicon avatar for the user.
+func (s *UserService) ResetAvatar(userUUID string) (string, error) {
+	avatarURL, err := s.avatarService.GenerateDefaultAvatar(userUUID)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate default avatar: %w", err)
+	}
+
+	fields := map[string]interface{}{
+		"avatar":     avatarURL,
+		"updated_at": time.Now().Unix(),
+	}
+	if err := s.userRepo.UpdateFields(userUUID, fields); err != nil {
+		return "", fmt.Errorf("failed to update avatar in database: %w", err)
+	}
+
+	return avatarURL, nil
 }
