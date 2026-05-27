@@ -62,6 +62,16 @@ func (tv *TypedValue) ToString() (string, error) {
 			return strconv.FormatUint(v, 10), nil
 		case uint:
 			return strconv.FormatUint(uint64(v), 10), nil
+		case float64:
+			return strconv.FormatInt(int64(v), 10), nil
+		case float32:
+			return strconv.FormatInt(int64(v), 10), nil
+		case json.Number:
+			i, err := v.Int64()
+			if err != nil {
+				return "", fmt.Errorf("value is not integer type: %w", err)
+			}
+			return strconv.FormatInt(i, 10), nil
 		default:
 			return "", fmt.Errorf("value is not integer type: got %T", tv.V)
 		}

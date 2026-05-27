@@ -44,8 +44,8 @@ func (h *PushHandler) HandleWebSocket(c *gin.Context) {
 	client := NewClient(userUUID.(string), conn)
 	h.pushService.Register(client)
 
-	// WritePump runs in a goroutine
+	// Both pumps run in separate goroutines so the Gin handler returns immediately.
+	// ReadPump's defer handles disconnect cleanup (Unregister + Close).
 	go client.WritePump()
-	// ReadPump runs in the current goroutine (blocks until disconnect)
-	client.ReadPump(h.pushService)
+	go client.ReadPump(h.pushService)
 }

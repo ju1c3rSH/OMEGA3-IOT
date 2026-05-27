@@ -29,6 +29,8 @@ func Cors() gin.HandlerFunc {
 
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler) {
 	router.Static("/uploads", "./uploads")
+	router.StaticFile("/debugger", "./debugger/index.html")
+	router.Static("/debugger/assets", "./debugger/assets")
 
 	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60).RateLimitMiddleware())
 

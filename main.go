@@ -76,7 +76,7 @@ func main() {
 	log.Println("[Main] PresenceService started")
 
 	newURL := fmt.Sprintf("%s://%s:%d", cfg.MQTT.Broker.Protocol, cfg.MQTT.Broker.Host, cfg.MQTT.Broker.Port)
-	mqttService, err := service.NewMQTTService(newURL, deviceService, loggerService, presenceService)
+	mqttService, err := service.NewMQTTService(newURL, deviceService, loggerService, presenceService, eventBus)
 	if err != nil {
 		log.Fatalf("[Main] Failed to initialize MQTT service: %v", err)
 	}

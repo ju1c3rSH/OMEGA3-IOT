@@ -1,197 +1,312 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OMEGA3-IOT Debugger</title>
-    <!-- Local cached fonts -->
-    <link href="css/fonts.css" rel="stylesheet">
-    <!-- Application styles -->
-    <link href="css/styles.css" rel="stylesheet">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OMEGA3-IOT Debugger</title>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+:root{--bg:#0f172a;--bg-card:#1e293b;--bg-input:#0f172a;--border:#334155;--primary:#3b82f6;--success:#22c55e;--error:#ef4444;--warn:#f59e0b;--purple:#a855f7;--orange:#f97316;--text:#e2e8f0;--text-dim:#94a3b8;--text-bright:#f8fafc;--radius:8px;--nav-w:56px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden}
+input,select,textarea,button{font-family:inherit;font-size:.85rem;background:var(--bg-input);color:var(--text);border:1px solid var(--border);border-radius:var(--radius);padding:6px 10px;outline:none}
+input:focus,textarea:focus{border-color:var(--primary)}
+button{cursor:pointer;background:var(--primary);color:#fff;border:none;padding:7px 14px;font-weight:600;transition:opacity .15s}
+button:hover{opacity:.85}button.secondary{background:var(--border)}button.danger{background:var(--error)}button.success{background:var(--success)}button.small{padding:4px 10px;font-size:.78rem}
+button:disabled{opacity:.4;cursor:not-allowed}
+textarea{resize:vertical;min-height:60px;font-family:Consolas,'Courier New',monospace;font-size:.82rem}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px}
+.card h3{font-size:.9rem;margin-bottom:10px;color:var(--text-bright)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.row>*{flex:1;min-width:0}
+label{font-size:.78rem;color:var(--text-dim);display:block;margin-bottom:3px}.field{margin-bottom:8px}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600}
+.tag-req{background:#1e40af;color:#93c5fd}.tag-res{background:#166534;color:#86efac}.tag-err{background:#991b1b;color:#fca5a5}.tag-mqtt{background:#581c87;color:#d8b4fe}.tag-ws{background:#9a3412;color:#fdba74}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block}.dot.on{background:var(--success)}.dot.off{background:var(--text-dim)}
+.toast-container{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast{padding:10px 16px;border-radius:var(--radius);color:#fff;font-size:.85rem;animation:slideIn .3s;min-width:200px}
+.toast.info{background:var(--primary)}.toast.ok{background:var(--success)}.toast.err{background:var(--error)}.toast.warn{background:var(--warn);color:#000}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+#app{display:flex;height:100vh}
+nav{width:var(--nav-w);background:var(--bg-card);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px;flex-shrink:0}
+nav button{width:44px;height:44px;border-radius:var(--radius);background:transparent;color:var(--text-dim);font-size:1.2rem;display:flex;align-items:center;justify-content:center;border:none;padding:0}
+nav button.active{background:var(--primary);color:#fff}nav button:hover:not(.active){background:var(--border)}
+main{flex:1;display:flex;flex-direction:column;overflow:hidden}.content{flex:1;overflow-y:auto;padding:16px}
+.console-panel{height:200px;border-top:1px solid var(--border);background:#0c0f1a;display:flex;flex-direction:column}
+.console-panel.collapsed{height:32px}
+.console-header{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:var(--bg-card);border-bottom:1px solid var(--border);cursor:pointer;flex-shrink:0}
+.console-header span{font-size:.78rem;color:var(--text-dim)}
+.console-body{flex:1;overflow-y:auto;padding:6px 12px;font-family:Consolas,'Courier New',monospace;font-size:.78rem;line-height:1.5}
+.log-line{padding:2px 0;border-bottom:1px solid #1a1f2e;word-break:break-all}
+.log-line pre{color:#9cdcfe;margin-top:2px;font-size:.75rem;white-space:pre-wrap}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.mono{font-family:Consolas,'Courier New',monospace}
+.status-bar{display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--bg-card);border-bottom:1px solid var(--border);font-size:.78rem}
+.status-bar .sep{color:var(--border)}
+table{width:100%;border-collapse:collapse;font-size:.82rem}th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--border)}th{color:var(--text-dim);font-weight:600;font-size:.75rem;text-transform:uppercase}tr:hover{background:rgba(59,130,246,.05)}
+.msg-list{max-height:300px;overflow-y:auto}
+.badge{background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;margin-left:4px}
+.switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:.82rem}.switch input{display:none}.switch .slider{width:36px;height:20px;background:var(--border);border-radius:10px;position:relative;transition:.2s}.switch .slider::after{content:'';width:16px;height:16px;background:#fff;border-radius:50%;position:absolute;top:2px;left:2px;transition:.2s}.switch input:checked+.slider{background:var(--primary)}.switch input:checked+.slider::after{left:18px}
+.prop-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.prop-row .name{font-family:monospace;min-width:140px;color:var(--primary);font-size:.82rem}
+.prop-row .type{color:var(--text-dim);font-size:.75rem;min-width:50px}
+.prop-row input{flex:1;max-width:200px}
+</style>
 </head>
 <body>
+<div id="app">
+  <div class="toast-container"><div v-for="t in toasts" :key="t.id" class="toast" :class="t.type">{{t.msg}}</div></div>
 
-<header>
-    <div class="logo"><span class="material-symbols-outlined">hub</span> OMEGA3-IOT <span style="font-weight:normal; opacity:0.6; font-size:0.8rem"></span></div>
-    <div class="row" style="width: auto; align-items: center;">
-        <input type="text" id="base_url" value="http://localhost:27015" placeholder="API Base URL" style="width:240px">
-        <div id="auth_status" class="status-pill">● 未认证</div>
-        <button class="btn sec" onclick="clearStorage()" style="padding:4px 8px">重置</button>
-    </div>
-</header>
+  <nav>
+    <button :class="{active:tab==='api'}" @click="tab='api'" title="API 测试">📡</button>
+    <button :class="{active:tab==='profile'}" @click="tab='profile'" title="用户资料">👤</button>
+    <button :class="{active:tab==='sim'}" @click="tab='sim'" title="MQTT 模拟器">🔧</button>
+    <button :class="{active:tab==='mqtt'}" @click="tab='mqtt'" title="MQTT 调试">📨</button>
+    <button :class="{active:tab==='ws'}" @click="tab='ws'" title="WS 推送">🔌</button>
+  </nav>
 
-<div class="layout-container">
-
-    <!-- Left Column: User & Registration -->
-    <div class="col">
-        <!-- User Auth -->
-        <div class="card">
-            <div class="card-header"><span>用户认证</span><span class="method-badge m-post">AUTH</span></div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="field"><label>用户名</label><input type="text" id="user_name" value="admin"></div>
-                    <div class="field"><label>密码</label><input type="password" id="user_pass" value="12345678"></div>
-                </div>
-                <div class="row">
-                    <button class="btn outline" onclick="doAuth('/users/register')">注册</button>
-                    <button class="btn" onclick="doAuth('/users/login')">登录</button>
-                </div>
-                <div class="field">
-                    <label>JWT Token</label>
-                    <input type="text" id="jwt_token" placeholder="Login to get token" readonly style="background:#f8fafc; font-family:monospace; font-size:0.7rem">
-                </div>
-            </div>
-        </div>
-
-        <!-- Registration Flow -->
-        <div class="card">
-            <div class="card-header"><span>Device Registration</span></div>
-            <div class="card-body">
-                <div class="tabs" id="reg_tabs">
-                    <div class="tab active" onclick="switchRegTab('anon')">1. 匿名注册 (设备端)</div>
-                    <div class="tab" onclick="switchRegTab('bind')">2. 用户绑定</div>
-                </div>
-
-                <div id="panel-anon">
-                    <div class="field"><label>设备类型 ID</label><input type="number" id="reg_type_id" value="1"></div>
-                    <button class="btn sec" onclick="registerAnon()" style="margin-top:8px">
-                        <span class="method-badge m-post">POST</span> 获取注册凭证
-                    </button>
-                    <div id="reg_result" style="margin-top:8px; font-size:0.7rem; color:#475569; background:#f1f5f9; padding:6px; border-radius:4px; display:none; white-space:pre"></div>
-                </div>
-
-                <div id="panel-bind" style="display:none">
-                    <div class="field"><label>注册码 (reg_code)</label><input type="text" id="bind_code" placeholder="如 A0WU@HG6"></div>
-                    <div class="field"><label>设备昵称 (nick)</label><input type="text" id="bind_nick" value="我的新设备"></div>
-                    <button class="btn" onclick="bindDevice()">
-                        <span class="method-badge m-post">POST</span> 绑定到我的账号
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Device Group (使用 group_uuid) -->
-        <div class="card">
-            <div class="card-header"><span>设备组管理 (UUID)</span><span class="method-badge m-post">GROUP</span></div>
-            <div class="card-body">
-                <div class="field"><label>组名称</label><input type="text" id="group_name" placeholder="输入组名"></div>
-                <button class="btn outline" onclick="createGroup()">创建新组</button>
-                <hr style="border:0; border-top:1px solid #eee; margin:4px 0">
-                <div class="field"><label>组 UUID (用于加入/退出)</label><input type="text" id="group_uuid_op" placeholder="输入组UUID"></div>
-                <div class="row">
-                    <button class="btn sec" onclick="groupOp('join')">加入组</button>
-                    <button class="btn sec" onclick="groupOp('quit')">退出组</button>
-                </div>
-            </div>
-        </div>
+  <main>
+    <div class="status-bar">
+      <span>Base: <input v-model="baseUrl" style="width:200px;background:transparent;border:none;color:var(--text);font-size:.78rem;padding:0" placeholder="http://lorelei.lat:27015"></span>
+      <span class="sep">|</span>
+      <span><span class="dot" :class="token?'on':'off'"></span> {{token?'已认证':'未认证'}}</span>
+      <span class="sep">|</span>
+      <span>设备: <strong class="mono" style="font-size:.75rem">{{selectedUuid||'无'}}</strong></span>
+      <span class="sep">|</span>
+      <span><span class="dot" :class="mqttConnected?'on':'off'"></span> MQTT {{mqttConnected?'已连接':'未连接'}}</span>
+      <span class="sep">|</span>
+      <span><span class="dot" :class="wsConnected?'on':'off'"></span> WS {{wsConnected?'已连接':'未连接'}}</span>
     </div>
 
-    <!-- Center Column: Control & List -->
-    <div class="col">
-        <!-- Target Context -->
-        <div class="card" style="border-left: 4px solid var(--primary);">
-            <div class="card-header"><span>操作上下文 (目标设备)</span></div>
-            <div class="card-body">
-                <div class="row" style="align-items: flex-end;">
-                    <div class="field" style="flex:2"><label>当前目标 instance_uuid</label><input type="text" id="target_uuid" placeholder="从列表选择或手动输入" style="font-family:monospace; color:var(--primary); font-weight:500"></div>
-                    <button class="btn outline" onclick="refreshDeviceList()" style="width:120px; height:34px"><span class="material-symbols-outlined" style="font-size:1rem">refresh</span> 刷新列表</button>
-                </div>
-                <div id="device_container" style="max-height: 180px; overflow-y: auto; border: 1px solid #eee; border-radius: 4px; padding: 4px;">
-                    <div style="text-align:center; padding:20px; color:#94a3b8; font-size:0.8rem">暂无设备，请刷新</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- MQTT Action -->
+    <div class="content">
+      <!-- ========== API Tab ========== -->
+      <div v-show="tab==='api'">
         <div class="card">
-            <div class="card-header"><span>指令下发 (actions)</span><span class="method-badge m-post">ACTION</span></div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="field" style="flex:1"><label>Command</label><input type="text" id="mqtt_cmd" value="reboot"></div>
-                    <div class="field" style="flex:2"><label>Params (JSON)</label><input type="text" id="mqtt_params" value='{"delay_sec": 5}'></div>
-                </div>
-                <button class="btn" onclick="sendAction()">发送指令</button>
-            </div>
+          <h3>认证</h3>
+          <div class="row">
+            <div class="field"><label>用户名</label><input v-model="auth.user" placeholder="admin"></div>
+            <div class="field"><label>密码</label><input v-model="auth.pass" type="password" placeholder="123456"></div>
+            <div style="display:flex;gap:6px;align-items:flex-end"><button @click="doRegister">注册</button><button @click="doLogin" class="success">登录</button><button @click="doLogout" class="secondary">登出</button></div>
+          </div>
+          <div class="field" style="margin-top:8px"><label>JWT Token</label><input v-model="token" @change="saveToken" placeholder="粘贴或登录获取"></div>
         </div>
+        <div class="grid2">
+          <div class="card">
+            <h3>设备列表 <button class="small secondary" @click="refreshDevices" style="margin-left:8px">刷新</button></h3>
+            <div v-if="devices.length===0" style="color:var(--text-dim);padding:12px;text-align:center">暂无设备</div>
+            <div v-for="d in devices" :key="d.instance_uuid" class="prop-row" style="cursor:pointer" :style="selectedUuid===d.instance_uuid?'background:rgba(59,130,246,.1)':''" @click="selectDevice(d.instance_uuid)">
+              <span class="dot" :class="d.online?'on':'off'"></span>
+              <span class="name">{{d.name||'无名称'}}</span>
+              <span class="type">{{d.type}}</span>
+              <span style="font-size:.7rem;color:var(--text-dim)">{{(d.instance_uuid||'').substring(0,8)}}...</span>
+            </div>
+          </div>
+          <div class="card">
+            <h3>设备注册 (两步)</h3>
+            <div class="field"><label>设备类型 ID</label><input v-model="reg.typeId" placeholder="1"></div>
+            <button @click="registerAnon" style="margin-bottom:8px">匿名注册</button>
+            <div v-if="reg.result" style="background:var(--bg);padding:8px;border-radius:var(--radius);font-family:monospace;font-size:.78rem;margin-bottom:8px;white-space:pre">{{reg.result}}</div>
+            <div class="field"><label>Reg Code</label><input v-model="reg.code" placeholder="从上方结果复制"></div>
+            <div class="field"><label>设备昵称</label><input v-model="reg.nick" placeholder="客厅传感器"></div>
+            <button @click="bindDevice" class="success">绑定设备</button>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h3>发送指令</h3>
+            <div class="field"><label>Command</label><input v-model="action.cmd" placeholder="reboot"></div>
+            <div class="field"><label>Params (JSON)</label><textarea v-model="action.params" placeholder='{"delay_sec": 5}'></textarea></div>
+            <button @click="sendAction">发送</button>
+          </div>
+          <div class="card">
+            <h3>历史数据查询</h3>
+            <div class="row"><div class="field"><label>开始</label><input v-model.number="hist.start" type="number"></div><div class="field"><label>结束</label><input v-model.number="hist.end" type="number"></div></div>
+            <div class="field"><label>Properties (JSON 数组)</label><textarea v-model="hist.props" placeholder='["battery_level"]'></textarea></div>
+            <div class="field"><label>Limit</label><input v-model.number="hist.limit" type="number" placeholder="1000"></div>
+            <button @click="queryHistory">查询</button>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="card">
+            <h3>设备组</h3>
+            <div class="field"><label>组名</label><input v-model="group.name" placeholder="客厅设备"></div>
+            <button @click="createGroup" style="margin-bottom:8px">创建组</button>
+            <div class="field"><label>Group UUID</label><input v-model="group.uuid" placeholder="组 UUID"></div>
+            <div class="row" style="gap:6px"><button class="small" @click="groupOp('join')">加入</button><button class="small secondary" @click="groupOp('quit')">退出</button></div>
+          </div>
+          <div class="card">
+            <h3>设备分享</h3>
+            <div class="field"><label>目标用户 UUID</label><input v-model="share.targetUuid"></div>
+            <div class="field"><label>权限</label><select v-model="share.perm"><option value="read">read</option><option value="write">write</option><option value="read_write">read_write</option></select></div>
+            <button @click="shareDevice">分享</button>
+          </div>
+        </div>
+        <div class="card"><h3>系统日志</h3><div class="row"><div class="field"><label>类型</label><select v-model="logQuery.type"><option value="device">设备日志</option><option value="user">用户日志</option></select></div><div style="display:flex;align-items:flex-end"><button @click="queryLogs">查询</button></div></div></div>
+      </div>
 
-        <!-- History Data -->
-        <div class="card">
-            <div class="card-header"><span>历史数据查询</span><span class="method-badge m-post">DATA</span></div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="field"><label>开始时间 (Unix)</label><input type="number" id="hist_start"></div>
-                    <div class="field"><label>结束时间 (Unix)</label><input type="number" id="hist_end"></div>
-                </div>
-                <div class="field">
-                    <label>属性列表 (JSON Array)</label>
-                    <input type="text" id="hist_props" value='["battery_level"]'>
-                </div>
-                <div class="row">
-                    <div class="field"><label>Limit</label><input type="number" id="hist_limit" value="100"></div>
-                    <button class="btn sec" style="align-self: flex-end; height:34px" onclick="queryHistory()">查询历史</button>
-                </div>
+      <!-- ========== Profile Tab ========== -->
+      <div v-show="tab==='profile'">
+        <div class="grid2">
+          <div class="card">
+            <h3>用户信息 <button @click="fetchUserInfo" class="small secondary" style="margin-left:8px">刷新</button></h3>
+            <div v-if="userInfo" style="font-size:.85rem;line-height:1.8">
+              <div><span style="color:var(--text-dim)">UUID:</span> <span class="mono">{{userInfo.uuid}}</span></div>
+              <div><span style="color:var(--text-dim)">用户名:</span> {{userInfo.username}}</div>
+              <div><span style="color:var(--text-dim)">昵称:</span> {{userInfo.nickname||'(未设置)'}}</div>
+              <div><span style="color:var(--text-dim)">描述:</span> {{userInfo.description||'(未设置)'}}</div>
+              <div><span style="color:var(--text-dim)">头像:</span> <span class="mono" style="font-size:.78rem">{{userInfo.avatar_url||'(默认)'}}</span></div>
             </div>
+            <div v-else style="color:var(--text-dim)">请先登录</div>
+          </div>
+          <div class="card">
+            <h3>编辑资料</h3>
+            <div class="field"><label>昵称</label><input v-model="profile.nickname" placeholder="新昵称"></div>
+            <div class="field"><label>描述</label><textarea v-model="profile.description" placeholder="个人简介"></textarea></div>
+            <button @click="updateProfile">保存</button>
+          </div>
         </div>
+        <div class="card">
+          <h3>头像管理</h3>
+          <div class="row">
+            <div style="flex:0 0 120px;text-align:center">
+              <div style="width:100px;height:100px;border-radius:50%;background:var(--border);margin:0 auto 8px;overflow:hidden;display:flex;align-items:center;justify-content:center">
+                <img v-if="avatarPreview" :src="avatarPreview" style="width:100%;height:100%;object-fit:cover">
+                <span v-else style="font-size:2rem;color:var(--text-dim)">👤</span>
+              </div>
+            </div>
+            <div style="flex:1">
+              <div class="field"><label>选择图片</label><input type="file" accept="image/*" @change="onAvatarFile"></div>
+              <div class="row" style="gap:6px"><button @click="uploadAvatar" class="success">上传头像</button><button @click="resetAvatar" class="danger">重置为默认</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== MQTT Simulator Tab ========== -->
+      <div v-show="tab==='sim'">
+        <div class="card"><h3>MQTT 连接</h3><div class="row"><div class="field"><label>Broker (WebSocket)</label><input v-model="sim.brokerUrl" placeholder="ws://lorelei.lat:9001"></div><div class="field"><label>Client ID</label><input v-model="sim.clientId"></div><div style="display:flex;align-items:flex-end;gap:6px"><button v-if="!sim.connected" @click="simConnect" class="success">连接</button><button v-else @click="simDisconnect" class="danger">断开</button></div></div></div>
+        <div class="grid2">
+          <div class="card"><h3>设备配置</h3><div class="field"><label>设备类型</label><select v-model.number="sim.typeId" @change="onTypeChange"><option :value="1">BaseTracker (GPS追踪器)</option><option :value="2">SmartSensor (环境传感器)</option><option :value="3">ToggleMachine (开关控制器)</option></select></div><div class="field"><label>设备 UUID</label><input v-model="sim.deviceUuid" placeholder="从 API Tab 复制"></div><div class="field"><label>Verify Code</label><input v-model="sim.verifyCode" placeholder="注册时获得"></div></div>
+          <div class="card"><h3>自动上报</h3><div class="row"><div class="field"><label>间隔 (秒)</label><input v-model.number="sim.interval" type="number" min="5"></div><div style="display:flex;align-items:flex-end"><label class="switch"><input type="checkbox" v-model="sim.autoReport" @change="toggleAutoReport"><span class="slider"></span></label><span style="margin-left:6px;font-size:.82rem">{{sim.autoReport?'运行中':'已停止'}}</span></div></div><div class="field" style="margin-top:6px"><label>波动范围 (%)</label><input v-model.number="sim.jitter" type="number" min="0" max="50" placeholder="10"></div></div>
+        </div>
+        <div class="card"><h3>属性面板 <button class="small" @click="reportAllProps" style="margin-left:8px" :disabled="!sim.connected">上报全部</button></h3><div v-for="(prop,key) in sim.typeDef.properties" :key="key" class="prop-row"><span class="name">{{key}}</span><span class="type">{{prop.format}}</span><span style="font-size:.75rem;color:var(--text-dim);min-width:60px">{{prop.unit||''}}</span><input v-model="sim.propValues[key]" :placeholder="prop.range?`[${prop.range[0]},${prop.range[1]}]`:''" style="max-width:180px"><span v-if="prop.range" style="font-size:.7rem;color:var(--text-dim)">{{prop.range[0]}}~{{prop.range[1]}}</span></div></div>
+        <div class="card"><h3>事件面板</h3><div class="row" style="gap:6px;margin-bottom:8px"><button v-for="(ev,key) in sim.typeDef.events" :key="key" class="small secondary" @click="selectEvent(key)" :style="sim.selectedEvent===key?'background:var(--primary);color:#fff':''">{{key}}</button></div><div v-if="sim.selectedEvent" class="field"><label>事件参数 (JSON)</label><textarea v-model="sim.eventPayload"></textarea></div><button @click="sendEvent" :disabled="!sim.connected||!sim.selectedEvent" class="small">发送事件</button></div>
+        <div class="card"><h3>收到的指令 <button class="small secondary" @click="sim.receivedActions=[]" style="margin-left:8px">清空</button></h3><div v-if="sim.receivedActions.length===0" style="color:var(--text-dim);padding:8px">等待指令...</div><div v-for="(a,i) in sim.receivedActions" :key="i" style="font-family:monospace;font-size:.82rem;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text-dim)">{{a.time}}</span><span style="color:var(--primary);margin-left:8px">{{a.command}}</span><span style="color:var(--text-dim);margin-left:8px">{{a.params}}</span></div></div>
+      </div>
+
+      <!-- ========== MQTT Debug Tab ========== -->
+      <div v-show="tab==='mqtt'">
+        <div class="card"><h3>MQTT 连接</h3><div class="row"><div class="field"><label>Broker URL</label><input v-model="dbg.brokerUrl" placeholder="ws://lorelei.lat:9001"></div><div class="field"><label>Client ID</label><input v-model="dbg.clientId"></div><div style="display:flex;align-items:flex-end;gap:6px"><button v-if="!dbg.connected" @click="dbgConnect" class="success">连接</button><button v-else @click="dbgDisconnect" class="danger">断开</button></div></div></div>
+        <div class="grid2">
+          <div class="card"><h3>订阅</h3><div class="row"><div class="field"><label>Topic</label><input v-model="dbg.subTopic" placeholder="data/device/#"></div><div class="field"><label>QoS</label><select v-model.number="dbg.subQos"><option :value="0">0</option><option :value="1">1</option><option :value="2">2</option></select></div><div style="display:flex;align-items:flex-end"><button class="small" @click="dbgSubscribe" :disabled="!dbg.connected">订阅</button></div></div><div style="margin-top:8px"><div v-for="(s,i) in dbg.subscriptions" :key="i" style="display:inline-flex;align-items:center;gap:4px;background:var(--bg);padding:3px 8px;border-radius:4px;margin:2px;font-size:.78rem"><span class="mono">{{s}}</span><button class="small danger" style="padding:1px 6px;font-size:.7rem" @click="dbgUnsub(s)">×</button></div></div></div>
+          <div class="card"><h3>发布</h3><div class="field"><label>Topic</label><input v-model="dbg.pubTopic"></div><div class="field"><label>QoS</label><select v-model.number="dbg.pubQos"><option :value="0">0</option><option :value="1">1</option><option :value="2">2</option></select></div><div class="field"><label>Payload</label><textarea v-model="dbg.pubPayload"></textarea></div><button @click="dbgPublish" :disabled="!dbg.connected">发布</button></div>
+        </div>
+        <div class="card"><h3>消息监控 <span class="badge">{{dbg.messages.length}}</span> <button class="small secondary" @click="dbg.messages=[]" style="margin-left:8px">清空</button></h3><div class="msg-list"><div v-for="(m,i) in dbg.messages" :key="i" class="log-line"><span style="color:var(--text-dim)">[{{m.time}}]</span><span class="tag tag-mqtt">MQTT</span><span class="mono" style="color:var(--primary);margin-left:4px">{{m.topic}}</span><pre>{{m.payload}}</pre></div></div></div>
+      </div>
+
+      <!-- ========== WS Push Tab ========== -->
+      <div v-show="tab==='ws'">
+        <div class="card"><h3>WebSocket 连接</h3><div class="row"><div class="field"><label>URL</label><input v-model="ws.url" :placeholder="'ws://lorelei.lat:27015/api/v1/ws'"></div><div style="display:flex;align-items:flex-end;gap:6px"><button v-if="!wsConnected" @click="wsConnect" class="success">连接</button><button v-else @click="wsDisconnect" class="danger">断开</button><button class="small secondary" @click="wsSendPing" :disabled="!wsConnected">Ping</button></div></div></div>
+        <div class="grid2">
+          <div class="card"><h3>收到的推送 <span class="badge">{{ws.messages.length}}</span> <button class="small secondary" @click="ws.messages=[]" style="margin-left:8px">清空</button></h3><div class="msg-list"><div v-for="(m,i) in ws.messages" :key="i" class="log-line"><span style="color:var(--text-dim)">[{{m.time}}]</span><span class="tag tag-ws">WS</span><span class="mono" style="color:var(--orange);margin-left:4px">{{m.type}}</span><span v-if="m.seq" style="color:var(--text-dim);margin-left:4px;font-size:.75rem">seq={{m.seq}}</span><button v-if="m.seq" class="small success" style="margin-left:8px;padding:1px 8px;font-size:.7rem" @click="wsSendAck(m.seq)">ACK</button><pre>{{m.payload}}</pre></div></div></div>
+          <div class="card"><h3>发送 Action</h3><div class="field"><label>设备 UUID</label><input v-model="ws.actionDeviceUuid" :placeholder="selectedUuid"></div><div class="field"><label>Command</label><input v-model="ws.actionCmd" placeholder="reboot"></div><div class="field"><label>Params (JSON)</label><textarea v-model="ws.actionParams" placeholder='{}'></textarea></div><button @click="wsSendAction" :disabled="!wsConnected">发送</button></div>
+        </div>
+      </div>
     </div>
 
-    <!-- Right Column: Logs & Shares -->
-    <div class="col">
-        <!-- Log Explorer -->
-        <div class="card">
-            <div class="card-header"><span>系统日志 (IoTDB)</span><span class="method-badge m-get">LOG</span></div>
-            <div class="card-body">
-                <div class="field">
-                    <label>查询类型</label>
-                    <select id="log_type">
-                        <option value="device">设备日志 (device)</option>
-                        <option value="user">用户日志 (user)</option>
-                    </select>
-                </div>
-                <button class="btn outline" onclick="querySystemLogs()">查询最近50条</button>
-                <div style="font-size: 0.65rem; color: #94a3b8; margin-top:4px">使用 start_time / end_time 范围</div>
-            </div>
+    <!-- Console -->
+    <div class="console-panel" :class="{collapsed:consoleCollapsed}">
+      <div class="console-header" @click="consoleCollapsed=!consoleCollapsed">
+        <span>控制台 ({{consoleLogs.length}})</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select v-model="consoleFilter" style="font-size:.72rem;padding:2px 6px" @click.stop><option value="all">全部</option><option value="http">HTTP</option><option value="mqtt">MQTT</option><option value="ws">WebSocket</option></select>
+          <button class="small secondary" @click.stop="consoleLogs=[]" style="padding:2px 8px;font-size:.72rem">清空</button>
+          <span style="font-size:.72rem">{{consoleCollapsed?'▲ 展开':'▼ 折叠'}}</span>
         </div>
-
-        <!-- Sharing -->
-        <div class="card">
-            <div class="card-header"><span>设备分享</span><span class="method-badge m-post">SHARE</span></div>
-            <div class="card-body">
-                <div class="field"><label>分享给用户 UUID (shared_with_uuid)</label><input type="text" id="share_user_uuid" placeholder="目标用户UUID"></div>
-                <div class="field">
-                    <label>权限</label>
-                    <select id="share_perm">
-                        <option value="read">只读 (read)</option>
-                        <option value="write">可操作 (write)</option>
-                        <option value="read_write" selected>完全 (read_write)</option>
-                    </select>
-                </div>
-                <button class="btn sec" onclick="shareDevice()">执行分享</button>
-            </div>
-        </div>
-
-        <!-- Info -->
-        <div class="card" style="background: transparent; border-style: dashed;">
-            <div class="card-body" style="font-size: 0.75rem; color: #64748b; line-height: 1.5;">
-                <p><strong>✅ 实际响应兼容:</strong></p>
-                <p>• 设备列表使用 <code>instances</code> 字段</p>
-                <p>• 支持无标准包装的直接数据返回</p>
-                <p>• 200状态码不再误标为错误</p>
-            </div>
-        </div>
+      </div>
+      <div class="console-body" v-show="!consoleCollapsed" ref="consoleBody">
+        <div v-for="(l,i) in filteredLogs" :key="i" class="log-line"><span style="color:#666">[{{l.time}}]</span><span class="tag" :class="'tag-'+l.tag">{{l.tag.toUpperCase()}}</span><span v-html="l.html"></span><pre v-if="l.detail">{{l.detail}}</pre></div>
+      </div>
     </div>
+  </main>
 </div>
 
-<!-- Console Footer -->
-<div class="console">
-    <div class="console-top">
-        <span>DEBUG LOGS (兼容实际响应)</span>
-        <span id="log-count" style="opacity: 0.7;">0 entries</span>
-        <span onclick="document.getElementById('log-output').innerHTML=''" style="cursor:pointer">CLEAR</span>
-    </div>
-    <div id="log-output"></div>
-</div>
+<script>
+const{createApp,ref,reactive,computed,watch,onMounted,nextTick}=Vue;
 
-<!-- Application JavaScript -->
-<script src="js/app.js"></script>
+const DEVICE_TYPES={1:{name:'BaseTracker',description:'GPS追踪器',properties:{battery_level:{writable:true,description:'电量百分比',unit:'%',range:[0,100],format:'int',required:true},battery_capacity:{writable:false,description:'电池额定容量',unit:'mAh',format:'int',required:false},gps_location:{writable:false,description:'GPS坐标',format:'string',required:false},signal_strength:{writable:false,description:'信号强度',unit:'dBm',range:[-110,-30],format:'int',required:false},device_status:{writable:true,description:'运行状态',format:'string',enum:['online','offline','sleep','error'],required:true}},events:{low_battery_alarm:{description:'低电量报警',severity:'warning'},sos_alert:{description:'SOS报警',severity:'critical'},motion_detected:{description:'检测到移动',severity:'info'}},actions:{reboot:{description:'远程重启'},sos_trigger:{description:'模拟SOS'},update_config:{description:'下发配置'}}},2:{name:'SmartSensor',description:'环境传感器',properties:{temperature:{writable:false,description:'温度',unit:'°C',range:[-40,85],format:'float',required:true},humidity:{writable:false,description:'湿度',unit:'%',range:[0,100],format:'float',required:true},light_intensity:{writable:false,description:'光照',unit:'lux',range:[0,100000],format:'int',required:false},sample_rate:{writable:true,description:'采集频率',unit:'s',format:'int',enum:[30,60,300,600],required:false}},events:{threshold_exceeded:{description:'阈值超限',severity:'warning'},sensor_error:{description:'传感器异常',severity:'critical'}},actions:{calibrate:{description:'校准'},set_sample_rate:{description:'调整频率'}}},3:{name:'ToggleMachine',description:'开关控制器',properties:{switch_status:{writable:true,description:'开关状态',format:'bool',required:true},last_toggle_time:{writable:false,description:'切换时间',format:'int',required:false},power_consumption:{writable:false,description:'用电量',unit:'kWh',range:[0,1000000],format:'float',required:false},overload_threshold:{writable:true,description:'过载阈值',unit:'W',range:[100,5000],format:'int',required:false}},events:{status_changed:{description:'状态变更',severity:'info'},overload_protected:{description:'过载保护',severity:'critical'}},actions:{toggle:{description:'切换'},schedule_toggle:{description:'定时开关'}}}};
+
+function defaultPropValues(td){const v={};for(const[k,p]of Object.entries(td.properties)){if(p.format==='int')v[k]=p.range?String(p.range[0]):'0';else if(p.format==='float')v[k]=p.range?String(p.range[0]):'0.0';else if(p.format==='bool')v[k]='true';else if(p.enum)v[k]=p.enum[0];else v[k]='';}return v;}
+
+createApp({setup(){
+const tab=ref('api'),baseUrl=ref(localStorage.getItem('iot_baseUrl')||'http://lorelei.lat:27015'),token=ref(localStorage.getItem('iot_token')||''),selectedUuid=ref(localStorage.getItem('iot_uuid')||''),toasts=ref([]),consoleCollapsed=ref(false),consoleFilter=ref('all'),consoleLogs=ref([]),consoleBody=ref(null);
+const auth=reactive({user:'admin',pass:'123456'}),devices=ref([]),reg=reactive({typeId:'1',result:'',code:'',nick:''}),action=reactive({cmd:'reboot',params:'{}'}),hist=reactive({start:Math.floor(Date.now()/1000)-86400,end:Math.floor(Date.now()/1000),props:'[]',limit:1000}),group=reactive({name:'',uuid:''}),share=reactive({targetUuid:'',perm:'read'}),logQuery=reactive({type:'device'});
+const userInfo=ref(null),profile=reactive({nickname:'',description:''}),avatarFile=ref(null),avatarPreview=ref('');
+const sim=reactive({brokerUrl:'ws://lorelei.lat:9001',clientId:'debugger-sim-'+Math.random().toString(36).substr(2,4),connected:false,client:null,typeId:1,typeDef:DEVICE_TYPES[1],deviceUuid:'',verifyCode:'',propValues:defaultPropValues(DEVICE_TYPES[1]),interval:30,autoReport:false,jitter:10,autoTimer:null,selectedEvent:'',eventPayload:'{}',receivedActions:[]});
+const dbg=reactive({brokerUrl:'ws://lorelei.lat:9001',clientId:'debugger-dbg-'+Math.random().toString(36).substr(2,4),connected:false,client:null,subTopic:'data/device/#',subQos:1,pubTopic:'',pubQos:1,pubPayload:'{}',subscriptions:[],messages:[]});
+const ws=reactive({url:'ws://lorelei.lat:27015/api/v1/ws',client:null,messages:[],actionDeviceUuid:'',actionCmd:'reboot',actionParams:'{}'});
+const wsConnected=ref(false),mqttConnected=computed(()=>sim.connected||dbg.connected);
+
+function toast(msg,type='info'){const id=Date.now();toasts.value.push({id,msg,type});setTimeout(()=>{toasts.value=toasts.value.filter(t=>t.id!==id)},3000);}
+function clog(tag,title,detail){const time=new Date().toLocaleTimeString(),colors={req:'#60a5fa',res:'#4ade80',err:'#f87171',mqtt:'#c084fc',ws:'#fb923c'};const html=`<strong style="color:${colors[tag]||'#e2e8f0'}">${esc(title)}</strong>`;consoleLogs.value.push({time,tag,html,detail:detail?(typeof detail==='object'?JSON.stringify(detail,null,2):String(detail)):null});if(consoleLogs.value.length>500)consoleLogs.value.shift();nextTick(()=>{if(consoleBody.value)consoleBody.value.scrollTop=consoleBody.value.scrollHeight});}
+const filteredLogs=computed(()=>consoleFilter.value==='all'?consoleLogs.value:consoleLogs.value.filter(l=>l.tag===consoleFilter.value));
+function esc(s){return s?s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])):s;}
+
+async function api(ep,method,data=null,isForm=false){
+const url=`${baseUrl.value.replace(/\/$/,'')}/api/v1${ep}`;const h={};if(token.value)h['Authorization']=`Bearer ${token.value}`;let body=null;
+if(data){if(isForm){h['Content-Type']='application/x-www-form-urlencoded';body=new URLSearchParams(data).toString();}else{h['Content-Type']='application/json';body=JSON.stringify(data);}}
+clog('http','req',`${method} ${ep}`,data);
+try{const resp=await fetch(url,{method,headers:h,body});const r=await resp.json();
+if(resp.ok){if(r&&typeof r==='object'&&'code' in r){if(r.code===200||r.code===201){clog('http','res',`${r.code} ${r.message||'OK'}`,r.data);return r;}else{clog('http','err',`${r.code} ${r.message}`,r);toast(r.message,'err');return null;}}else{clog('http','res','200',r);return{code:200,message:'success',data:r};}}
+else{const msg=r?.message||`HTTP ${resp.status}`;clog('http','err',`${resp.status} ${msg}`,r);toast(msg,'err');return null;}}
+catch(e){clog('http','err','Network',e.message);toast('Network: '+e.message,'err');return null;}}
+
+async function doRegister(){const r=await api('/users/register','POST',{username:auth.user,password:auth.pass},true);if(r)toast('注册成功','ok');}
+async function doLogin(){const r=await api('/users/login','POST',{username:auth.user,password:auth.pass},true);if(r?.data?.access_token){token.value=r.data.access_token;localStorage.setItem('iot_token',token.value);toast('登录成功','ok');refreshDevices();}}
+async function doLogout(){await api('/users/logout','POST');token.value='';localStorage.removeItem('iot_token');toast('已登出','info');}
+function saveToken(){localStorage.setItem('iot_token',token.value);}
+async function refreshDevices(){const r=await api('/users/getUserAllDevices','GET');if(r?.data){let d=[];if(Array.isArray(r.data))d=r.data;else if(r.data.instances)d=r.data.instances;else if(r.data.devices)d=r.data.devices;devices.value=d;}}
+function selectDevice(uuid){selectedUuid.value=uuid;localStorage.setItem('iot_uuid',uuid);}
+async function registerAnon(){const r=await api('/device/deviceRegisterAnon','POST',{device_type_id:reg.typeId},true);if(r?.data?.device){const d=r.data.device;reg.result=`reg_code: ${d.reg_code}\nuuid: ${d.uuid}\nverify_code: ${d.verify_code}\nexpires_at: ${d.expires_at}`;reg.code=d.reg_code;}}
+async function bindDevice(){const r=await api('/users/bindDeviceByRegCode','POST',{reg_code:reg.code,device_nick:reg.nick,device_remark:''},false);if(r){toast('绑定成功','ok');refreshDevices();}}
+async function sendAction(){const uuid=selectedUuid.value;if(!uuid){toast('请先选择设备','warn');return;}let p={};try{p=JSON.parse(action.params);}catch(e){toast('Params JSON 错误','err');return;}await api(`/devices/${uuid}/actions`, 'POST',{command:action.cmd,params:p},false);}
+async function queryHistory(){const uuid=selectedUuid.value;if(!uuid){toast('请先选择设备','warn');return;}let p=[];try{p=JSON.parse(hist.props);}catch(e){toast('Properties JSON 错误','err');return;}await api(`/devices/${uuid}/getHistoryData`, 'POST',{start_timestamp:hist.start,end_timestamp:hist.end,properties:p,limit:hist.limit,offset:0},false);}
+async function createGroup(){if(!group.name){toast('请输入组名','warn');return;}await api('/devices/groups/create_group','POST',{name:group.name,description:''},false);}
+async function groupOp(t){const uuid=selectedUuid.value;if(!uuid||!group.uuid){toast('需要设备UUID和组UUID','warn');return;}await api(`/devices/${uuid}/${t}_group`, 'POST',{group_uuid:group.uuid},false);}
+async function shareDevice(){const uuid=selectedUuid.value;if(!uuid||!share.targetUuid){toast('需要设备UUID和目标用户UUID','warn');return;}await api(`/devices/${uuid}/share`, 'POST',{shared_with_uuid:share.targetUuid,permission:share.perm,expires_at:null},false);}
+async function queryLogs(){const uuid=selectedUuid.value;if(!uuid){toast('请先选择设备','warn');return;}const p=logQuery.type==='device'?`device_uuid=${uuid}`:`user_uuid=${uuid}`;await api(`/logs/${logQuery.type}?${p}&start_time=${hist.start}&end_time=${hist.end}&limit=50`,'GET');}
+async function fetchUserInfo(){const r=await api('/users/info','GET');if(r?.data)userInfo.value=r.data;}
+async function updateProfile(){const d={};if(profile.nickname)d.nickname=profile.nickname;if(profile.description)d.description=profile.description;if(!Object.keys(d).length){toast('没有需要更新的内容','warn');return;}const r=await api('/users/profile','PUT',d,false);if(r){toast('资料已更新','ok');fetchUserInfo();}}
+function onAvatarFile(e){avatarFile.value=e.target.files[0];if(avatarFile.value)avatarPreview.value=URL.createObjectURL(avatarFile.value);}
+async function uploadAvatar(){if(!avatarFile.value){toast('请先选择图片','warn');return;}const fd=new FormData();fd.append('avatar',avatarFile.value);const url=`${baseUrl.value.replace(/\/$/,'')}/api/v1/users/avatar`;clog('http','req','POST /users/avatar');try{const resp=await fetch(url,{method:'POST',headers:{'Authorization':`Bearer ${token.value}`},body:fd});const r=await resp.json();if(resp.ok&&(r.code===200||r.code===201)){clog('http','res','200 OK',r.data);toast('头像已上传','ok');fetchUserInfo();}else{clog('http','err',`${resp.status} ${r.message}`,r);toast(r.message||'上传失败','err');}}catch(e){clog('http','err','Upload failed',e.message);toast('上传失败','err');}}
+async function resetAvatar(){const r=await api('/users/avatar','DELETE');if(r){toast('头像已重置','ok');fetchUserInfo();}}
+
+function simConnect(){if(!sim.brokerUrl){toast('请输入 Broker URL','warn');return;}try{sim.client=mqtt.connect(sim.brokerUrl,{clientId:sim.clientId,clean:true,connectTimeout:5000});sim.client.on('connect',()=>{sim.connected=true;clog('mqtt','res','Sim connected');toast('MQTT 已连接','ok');if(sim.deviceUuid)sim.client.subscribe(`data/device/${sim.deviceUuid}/action`,{qos:1});});sim.client.on('message',(t,m)=>{try{const d=JSON.parse(m.toString());clog('mqtt','res',`← ${t}`,d);sim.receivedActions.push({time:new Date().toLocaleTimeString(),command:d.command||'',params:JSON.stringify(d.params||{})});}catch(e){clog('mqtt','res',`← ${t}`,m.toString());}});sim.client.on('error',e=>{clog('mqtt','err','Sim error',e.message);toast('MQTT 错误','err');});sim.client.on('close',()=>{sim.connected=false;});}catch(e){toast('连接失败','err');}}
+function simDisconnect(){if(sim.client){sim.client.end();sim.client=null;}sim.connected=false;if(sim.autoTimer){clearInterval(sim.autoTimer);sim.autoTimer=null;sim.autoReport=false;}}
+function onTypeChange(){sim.typeDef=DEVICE_TYPES[sim.typeId];sim.propValues=defaultPropValues(sim.typeDef);}
+function buildProps(){const props={};const now=Math.floor(Date.now()/1000);for(const[k,v]of Object.entries(sim.propValues)){const meta=sim.typeDef.properties[k];if(!meta||v==='')continue;let val=v;if(sim.autoReport&&sim.jitter>0&&(meta.format==='int'||meta.format==='float')){const n=parseFloat(v),j=n*(sim.jitter/100);val=String(n+(Math.random()*2-1)*j);if(meta.format==='int')val=String(Math.round(parseFloat(val)));}props[k]={v:meta.format==='int'?parseInt(val):meta.format==='float'?parseFloat(val):meta.format==='bool'?val==='true':val,type:meta.format,timestamp:now};}return props;}
+function reportAllProps(){if(!sim.connected||!sim.deviceUuid){toast('请先连接并配置设备','warn');return;}const p={verify_code:sim.verifyCode,timestamp:Math.floor(Date.now()/1000),data:{properties:buildProps()}};const t=`data/device/${sim.deviceUuid}/properties`;sim.client.publish(t,JSON.stringify(p),{qos:1});clog('mqtt','req',`→ ${t}`,p);toast('属性已上报','ok');}
+function toggleAutoReport(){if(sim.autoReport){sim.autoTimer=setInterval(reportAllProps,sim.interval*1000);clog('mqtt','res',`Auto-report started (${sim.interval}s)`);}else{if(sim.autoTimer){clearInterval(sim.autoTimer);sim.autoTimer=null;}clog('mqtt','res','Auto-report stopped');}}
+function selectEvent(key){sim.selectedEvent=key;const ev=sim.typeDef.events[key];sim.eventPayload=ev.severity==='warning'?JSON.stringify({current_level:15},null,2):ev.severity==='critical'?JSON.stringify({trigger_reason:'button_press'},null,2):'{}';}
+function sendEvent(){if(!sim.connected||!sim.deviceUuid||!sim.selectedEvent){toast('请先配置设备和事件','warn');return;}let ed={};try{ed=JSON.parse(sim.eventPayload);}catch(e){toast('事件参数 JSON 错误','err');return;}const p={verify_code:sim.verifyCode,timestamp:Math.floor(Date.now()/1000),data:{event:{event_key:sim.selectedEvent,type:sim.typeDef.events[sim.selectedEvent].severity,content:JSON.stringify(ed)}}};const t=`data/device/${sim.deviceUuid}/properties`;sim.client.publish(t,JSON.stringify(p),{qos:1});clog('mqtt','req',`→ ${t} (event: ${sim.selectedEvent})`,p);toast('事件已发送','ok');}
+
+function dbgConnect(){if(!dbg.brokerUrl){toast('请输入 Broker URL','warn');return;}try{dbg.client=mqtt.connect(dbg.brokerUrl,{clientId:dbg.clientId,clean:true,connectTimeout:5000});dbg.client.on('connect',()=>{dbg.connected=true;clog('mqtt','res','Debug connected');toast('MQTT 调试已连接','ok');});dbg.client.on('message',(t,m)=>{let p=m.toString();try{p=JSON.stringify(JSON.parse(m.toString()),null,2);}catch(e){}dbg.messages.push({time:new Date().toLocaleTimeString(),topic:t,payload:p});if(dbg.messages.length>200)dbg.messages.shift();});dbg.client.on('error',e=>{clog('mqtt','err','Debug error',e.message);});dbg.client.on('close',()=>{dbg.connected=false;});}catch(e){toast('连接失败','err');}}
+function dbgDisconnect(){if(dbg.client){dbg.client.end();dbg.client=null;}dbg.connected=false;dbg.subscriptions=[];}
+function dbgSubscribe(){if(!dbg.connected||!dbg.subTopic)return;dbg.client.subscribe(dbg.subTopic,{qos:dbg.subQos});if(!dbg.subscriptions.includes(dbg.subTopic))dbg.subscriptions.push(dbg.subTopic);clog('mqtt','req',`Subscribed: ${dbg.subTopic}`);}
+function dbgUnsub(t){if(dbg.client)dbg.client.unsubscribe(t);dbg.subscriptions=dbg.subscriptions.filter(s=>s!==t);}
+function dbgPublish(){if(!dbg.connected||!dbg.pubTopic)return;dbg.client.publish(dbg.pubTopic,dbg.pubPayload,{qos:dbg.pubQos});clog('mqtt','req',`→ ${dbg.pubTopic}`,dbg.pubPayload);}
+
+function wsConnect(){const url=ws.url||`ws://${baseUrl.value.replace(/https?:\/\//,'')}/api/v1/ws`;try{const c=new WebSocket(url);c.onopen=()=>{wsConnected.value=true;ws.client=c;clog('ws','res','WS connected');toast('WS 已连接','ok');};c.onmessage=e=>{try{const d=JSON.parse(e.data);ws.messages.push({time:new Date().toLocaleTimeString(),type:d.type||'unknown',seq:d.seq||null,payload:JSON.stringify(d.payload||d,null,2)});if(ws.messages.length>200)ws.messages.shift();}catch(err){ws.messages.push({time:new Date().toLocaleTimeString(),type:'raw',seq:null,payload:e.data});}};c.onclose=()=>{wsConnected.value=false;ws.client=null;clog('ws','res','WS disconnected');};c.onerror=()=>{clog('ws','err','WS error','');toast('WS 错误','err');};}catch(e){toast('WS 连接失败','err');}}
+function wsDisconnect(){if(ws.client){ws.client.close();ws.client=null;}wsConnected.value=false;}
+function wsSendPing(){if(!ws.client)return;ws.client.send(JSON.stringify({type:'ping',ts:Math.floor(Date.now()/1000)}));clog('ws','req','→ ping');}
+function wsSendAck(seq){if(!ws.client)return;ws.client.send(JSON.stringify({type:'ack',ts:Math.floor(Date.now()/1000),payload:{ack_seq:seq}}));clog('ws','req',`→ ack (seq=${seq})`);}
+function wsSendAction(){if(!ws.client)return;const uuid=ws.actionDeviceUuid||selectedUuid.value;if(!uuid){toast('请输入设备 UUID','warn');return;}let p={};try{p=JSON.parse(ws.actionParams);}catch(e){toast('Params JSON 错误','err');return;}const m={type:'action.send',ts:Math.floor(Date.now()/1000),payload:{device_uuid:uuid,command:ws.actionCmd,params:p}};ws.client.send(JSON.stringify(m));clog('ws','req','→ action.send',m.payload);}
+
+onMounted(()=>{const now=Math.floor(Date.now()/1000);hist.start=now-86400;hist.end=now;if(token.value)refreshDevices();});
+watch(baseUrl,v=>localStorage.setItem('iot_baseUrl',v));
+
+return{tab,baseUrl,token,selectedUuid,toasts,consoleCollapsed,consoleFilter,consoleLogs,consoleBody,filteredLogs,auth,devices,reg,action,hist,group,share,logQuery,userInfo,profile,avatarPreview,sim,dbg,ws,wsConnected,mqttConnected,toast,clog,doRegister,doLogin,doLogout,saveToken,refreshDevices,selectDevice,registerAnon,bindDevice,sendAction,queryHistory,createGroup,groupOp,shareDevice,queryLogs,fetchUserInfo,updateProfile,onAvatarFile,uploadAvatar,resetAvatar,simConnect,simDisconnect,onTypeChange,reportAllProps,toggleAutoReport,selectEvent,sendEvent,dbgConnect,dbgDisconnect,dbgSubscribe,dbgUnsub,dbgPublish,wsConnect,wsDisconnect,wsSendPing,wsSendAck,wsSendAction};
+}}).mount('#app');
+</script>
 </body>
 </html>

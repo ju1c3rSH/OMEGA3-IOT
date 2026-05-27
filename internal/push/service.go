@@ -55,7 +55,10 @@ func NewPushService(
 // Start subscribes to EventBus events and starts the ACK retransmit checker.
 func (ps *PushService) Start() {
 	eventbus.SubscribeTyped(ps.eventBus, eventbus.EventType(logger.LogEventDeviceStatusChange), ps.handleStatusChange)
-	log.Println("[PushService] Subscribed to device.status.change")
+	eventbus.SubscribeTyped(ps.eventBus, eventbus.EventType(logger.LogEventDevicePropertyUpdate), ps.handlePropertyUpdate)
+	eventbus.SubscribeTyped(ps.eventBus, eventbus.EventType("device.event.received"), ps.handleEventPush)
+	eventbus.SubscribeTyped(ps.eventBus, eventbus.EventType(logger.LogEventDeviceActionResult), ps.handleActionResult)
+	log.Println("[PushService] Subscribed to device.status.change, device.property.update, device.event.received, device.action.result")
 
 	// Background ACK retransmit checker
 	ps.wg.Add(1)
@@ -177,6 +180,68 @@ func (ps *PushService) handleStatusChange(ctx context.Context, event logger.Devi
 		LastSeen:   event.Timestamp,
 	}
 	msg := NewMessage(TypeDeviceStatus, payload)
+	ps.PushToDeviceOwner(event.DeviceUUID, msg)
+	return nil
+}
+
+func (ps *PushService) handlePropertyUpdate(ctx context.Context, event logger.DeviceLogEvent) error {
+	props, _ := event.Metadata["properties"].(map[string]interface{})
+	if len(props) == 0 {
+		return nil
+	}
+	payload := PropertyUpdatePayload{
+		DeviceUUID: event.DeviceUUID,
+		Properties: props,
+	}
+	msg := NewMessage(TypePropertyUpdate, payload)
+	ps.PushToDeviceOwner(event.DeviceUUID, msg)
+	return nil
+}
+
+func (ps *PushService) handleEventPush(ctx context.Context, event logger.DeviceLogEvent) error {
+	eventKey, _ := event.Metadata["event_key"].(string)
+	severity, _ := event.Metadata["severity"].(string)
+	data := event.Metadata["data"]
+
+	payload := EventPushPayload{
+		EventKey:   eventKey,
+		DeviceUUID: event.DeviceUUID,
+		Severity:   severity,
+		Data:       data,
+	}
+	// Use sendWithACK for warning/critical events
+	msg := NewSequencedMessage(TypeEventPush, ps.nextSeq(), payload)
+
+	// Store for ACK tracking
+	dataBytes, _ := json.Marshal(msg)
+	pm := &pendingMessage{
+		seq:    msg.Seq,
+		data:   dataBytes,
+		sentAt: time.Now(),
+	}
+	ps.pendingACKs.Store(msg.Seq, pm)
+
+	// Push to device owner
+	instance, err := ps.instanceRepo.FindByUUID(event.DeviceUUID)
+	if err != nil {
+		return nil
+	}
+	ps.PushToUser(instance.OwnerUUID, msg)
+	return nil
+}
+
+func (ps *PushService) handleActionResult(ctx context.Context, event logger.DeviceLogEvent) error {
+	command, _ := event.Metadata["command"].(string)
+	success, _ := event.Metadata["success"].(bool)
+	errMsg, _ := event.Metadata["error"].(string)
+
+	payload := ActionResultPayload{
+		DeviceUUID: event.DeviceUUID,
+		Command:    command,
+		Success:    success,
+		Error:      errMsg,
+	}
+	msg := NewMessage(TypeActionResult, payload)
 	ps.PushToDeviceOwner(event.DeviceUUID, msg)
 	return nil
 }

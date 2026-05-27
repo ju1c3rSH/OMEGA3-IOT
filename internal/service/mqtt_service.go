@@ -1,6 +1,7 @@
 package service
 
 import (
+	"OMEGA3-IOT/internal/eventbus"
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/spec"
@@ -21,6 +22,7 @@ type MQTTService struct {
 	deviceService   *DeviceService
 	presenceService *PresenceService
 	loggerService   logger.LoggerInterface
+	eventBus        *eventbus.EventBus
 }
 
 type DeviceMessage struct {
@@ -38,7 +40,7 @@ type Publisher interface {
 	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
 }
 
-func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface, presenceService *PresenceService) (*MQTTService, error) {
+func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface, presenceService *PresenceService, eventBus *eventbus.EventBus) (*MQTTService, error) {
 	options := mqtt.NewClientOptions()
 	options.AddBroker(brokerURL)
 
@@ -70,6 +72,7 @@ func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerServic
 		deviceService:   deviceService,
 		presenceService: presenceService,
 		loggerService:   loggerService,
+		eventBus:        eventBus,
 	}
 	service.setupSubscription()
 	return service, nil
@@ -93,7 +96,12 @@ func (m *MQTTService) setupSubscription() {
 	if token := m.broker.Subscribe("data/device/+/properties", 1, m.handlePropertiesData); token.Wait() && token.Error() != nil {
 		log.Fatalf("Failed to subscribe to data topic : %s", token.Error())
 	} else {
-		log.Printf("Successfully subscribed to topic [data/device/+/property]")
+		log.Printf("Successfully subscribed to topic [data/device/+/properties]")
+	}
+	if token := m.broker.Subscribe("data/device/+/action_result", 1, m.handleActionResult); token.Wait() && token.Error() != nil {
+		log.Printf("Warning: Failed to subscribe to action_result topic: %s", token.Error())
+	} else {
+		log.Printf("Successfully subscribed to topic [data/device/+/action_result]")
 	}
 }
 func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
@@ -134,6 +142,15 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 	// Mark device online via PresenceService
 	m.presenceService.MarkOnline(deviceUUID)
 
+	// Publish property.update event to EventBus for WebSocket push
+	propUpdateEvent := logger.NewDeviceLogEvent(deviceUUID, logger.LogLevelInfo, "Properties updated", logger.LogEventDevicePropertyUpdate)
+	propsMap := make(map[string]interface{})
+	for k, v := range rawPropsData {
+		propsMap[k] = v.Value.V
+	}
+	propUpdateEvent.Metadata["properties"] = propsMap
+	m.eventBus.Publish(context.Background(), propUpdateEvent)
+
 	// Handle event if present
 	if message.Data.Event.EventKey != "" {
 		m.handleEvent(instance, message.Data.Event)
@@ -166,10 +183,66 @@ func (m *MQTTService) handleEvent(instance *model.Instance, event model.DeviceEv
 				}
 			}
 		}
-		log.Printf("[MQTT] Received validated event '%s' from device %s (severity: %s)", event.EventKey, instance.InstanceUUID, typeDef.Events[event.EventKey].Severity)
+		severity := typeDef.Events[event.EventKey].Severity
+		log.Printf("[MQTT] Received validated event '%s' from device %s (severity: %s)", event.EventKey, instance.InstanceUUID, severity)
+
+		// Publish to EventBus for WebSocket push (only warning/critical)
+		if severity == "warning" || severity == "critical" {
+			var eventData interface{}
+			if event.Content != "" {
+				json.Unmarshal([]byte(event.Content), &eventData)
+			}
+			pushEvent := logger.NewDeviceLogEvent(instance.InstanceUUID, logger.LogLevelInfo, fmt.Sprintf("Event: %s", event.EventKey), logger.LogEventDeviceError)
+			pushEvent.Metadata["event_key"] = event.EventKey
+			pushEvent.Metadata["severity"] = severity
+			pushEvent.Metadata["data"] = eventData
+			// Use a custom event type for event push
+			pushEvent.BaseEvent.Type = eventbus.EventType("device.event.received")
+			m.eventBus.Publish(context.Background(), pushEvent)
+		}
 	} else {
 		log.Printf("[MQTT] Received unknown event '%s' from device %s", event.EventKey, instance.InstanceUUID)
 	}
+}
+
+type ActionResultMessage struct {
+	VerifyCode string `json:"verify_code"`
+	TimeStamp  int64  `json:"timestamp"`
+	Data       struct {
+		Command string `json:"command"`
+		Success bool   `json:"success"`
+		Error   string `json:"error,omitempty"`
+	} `json:"data"`
+}
+
+func (m *MQTTService) handleActionResult(c mqtt.Client, msg mqtt.Message) {
+	topic := msg.Topic()
+	payload := msg.Payload()
+	log.Printf("Received action result from MQTT topic [%s]: %s", topic, string(payload))
+
+	deviceUUID, _ := extractDeviceUUIDFromTopic(topic)
+	var message ActionResultMessage
+	if err := json.Unmarshal(payload, &message); err != nil {
+		log.Printf("[MQTT] Failed to parse action_result: %v", err)
+		return
+	}
+
+	// Authenticate device
+	hashedVerifyCode := utils.HashVerifyCode(message.VerifyCode)
+	instance, err := m.deviceService.GetDeviceByUUIDAndVerifyHash(deviceUUID, hashedVerifyCode)
+	if err != nil {
+		log.Printf("[MQTT] Action result auth failed for device %s: %v", deviceUUID, err)
+		return
+	}
+
+	// Publish to EventBus for WebSocket push
+	resultEvent := logger.NewDeviceLogEvent(instance.InstanceUUID, logger.LogLevelInfo, fmt.Sprintf("Action result: %s", message.Data.Command), logger.LogEventDeviceActionResult)
+	resultEvent.Metadata["command"] = message.Data.Command
+	resultEvent.Metadata["success"] = message.Data.Success
+	resultEvent.Metadata["error"] = message.Data.Error
+	m.eventBus.Publish(context.Background(), resultEvent)
+
+	log.Printf("[MQTT] Action result from device %s: command=%s success=%v", deviceUUID, message.Data.Command, message.Data.Success)
 }
 
 func extractDeviceUUIDFromTopic(topic string) (string, error) {
