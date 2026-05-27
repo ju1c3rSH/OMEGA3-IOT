@@ -181,7 +181,7 @@ device_types:
 
       light_intensity:
         writable: false
-        description: "光照强度（需 light_sensor 能力）"
+        description: "光照强度"
         unit: "lux"
         range: [0, 100000]
         format: "int"
