@@ -5,6 +5,7 @@ import (
 	"OMEGA3-IOT/internal/handler"
 	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/logger"
+	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *handler.DeviceGroupHandler, jwtAuth *MiddleWares.JWTAuth) error {
+func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *handler.DeviceGroupHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -30,7 +31,7 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceGroupHandler, mqttService, jwtAuth)
+	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceGroupHandler, mqttService, jwtAuth, pushHandler)
 
 	log.Println("Starting server on :" + config.Server.Port)
 	return r.Run(":" + config.Server.Port)

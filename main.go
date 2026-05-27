@@ -9,6 +9,7 @@ import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/model"
+	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/service"
 	"fmt"
@@ -114,7 +115,14 @@ func main() {
 	jwtAuth := MiddleWares.NewJWTAuth(tokenBlacklistService)
 	log.Println("[Main] JWTAuth middleware created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth)
+	// Initialize PushService (WebSocket push channel)
+	pushService := push.NewPushService(eventBus, instanceRepo, userRepo)
+	pushService.Start()
+	defer pushService.Stop()
+	pushHandler := push.NewPushHandler(pushService)
+	log.Println("[Main] PushService started")
+
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
