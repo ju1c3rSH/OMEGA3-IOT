@@ -126,13 +126,16 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 	}
 
 	userInfo := gin.H{
-		"id":         user.ID,
-		"uuid":       user.UserUUID,
-		"username":   user.UserName,
-		"role":       user.Role,
-		"created_at": user.CreatedAt,
-		"last_seen":  user.LastSeen,
-		"last_ip":    user.IP,
+		"id":          user.ID,
+		"uuid":        user.UserUUID,
+		"username":    user.UserName,
+		"nickname":    user.Nickname,
+		"avatar_url":  user.Avatar,
+		"description": user.Description,
+		"role":        user.Role,
+		"created_at":  user.CreatedAt,
+		"last_seen":   user.LastSeen,
+		"last_ip":     user.IP,
 	}
 
 	response := types.NewSuccessResponseWithCode(userInfo, http.StatusOK, "User info retrieved successfully")
@@ -210,4 +213,68 @@ func (h *UserHandler) BindDeviceByRegCode(c *gin.Context) {
 
 	response := types.NewSuccessResponseWithCode(payload, http.StatusOK, "Device created successfully")
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *UserHandler) UpdateProfile(c *gin.Context) {
+	userUUID, exists := c.Get("user_uuid")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Authentication required"))
+		return
+	}
+
+	var input model.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error()))
+		return
+	}
+
+	if err := h.userService.UpdateProfile(userUUID.(string), input); err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(http.StatusInternalServerError, "Failed to update profile", err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponseWithCode(nil, http.StatusOK, "Profile updated successfully"))
+}
+
+func (h *UserHandler) UploadAvatar(c *gin.Context) {
+	userUUID, exists := c.Get("user_uuid")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Authentication required"))
+		return
+	}
+
+	file, _, err := c.Request.FormFile("avatar")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Missing avatar file", err.Error()))
+		return
+	}
+	defer file.Close()
+
+	avatarURL, err := h.userService.UpdateAvatar(userUUID.(string), file)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(http.StatusInternalServerError, "Failed to upload avatar", err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponseWithCode(gin.H{
+		"avatar_url": avatarURL,
+	}, http.StatusOK, "Avatar uploaded successfully"))
+}
+
+func (h *UserHandler) ResetAvatar(c *gin.Context) {
+	userUUID, exists := c.Get("user_uuid")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "Authentication required"))
+		return
+	}
+
+	avatarURL, err := h.userService.ResetAvatar(userUUID.(string))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, types.NewErrorResponse(http.StatusInternalServerError, "Failed to reset avatar", err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponseWithCode(gin.H{
+		"avatar_url": avatarURL,
+	}, http.StatusOK, "Avatar reset to default"))
 }
