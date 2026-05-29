@@ -30,19 +30,19 @@ func (j *JWTAuth) JwtAuthMiddleWare() gin.HandlerFunc {
 	return func(context *gin.Context) {
 		var tokenString string
 
-		// Extract token from cookie or header
+		// Extract token from cookie, header, or query parameter
 		authHeader := context.GetHeader("Authorization")
 		authInCookie, err := context.Request.Cookie("Authorization")
 		if err == nil && authInCookie != nil {
 			tokenString = authInCookie.Value
+		} else if authHeader != "" {
+			tokenString = authHeader
+		} else if token := context.Query("token"); token != "" {
+			tokenString = token
 		} else {
-			if authHeader == "" {
-				context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "No token found in cookie or header"))
-				context.Abort()
-				return
-			} else {
-				tokenString = authHeader
-			}
+			context.JSON(http.StatusUnauthorized, types.NewErrorResponse(http.StatusUnauthorized, "No token found in cookie, header, or query"))
+			context.Abort()
+			return
 		}
 		if strings.HasPrefix(tokenString, "Bearer ") {
 			tokenString = tokenString[7:]

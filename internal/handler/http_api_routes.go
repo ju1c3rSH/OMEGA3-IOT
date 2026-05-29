@@ -27,7 +27,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler) {
 	router.Static("/uploads", "./uploads")
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
@@ -93,6 +93,42 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	{
 		wsGroup.GET("", pushHandler.HandleWebSocket)
 	}
+
+	// User Group routes
+	groupRoutes := v1.Group("/groups")
+	groupRoutes.Use(jwtAuth.JwtAuthMiddleWare())
+	{
+		// Group CRUD
+		groupRoutes.POST("", userGroupHandler.CreateGroup)
+		groupRoutes.GET("", userGroupHandler.GetMyGroups)
+		groupRoutes.GET("/:group_uuid", userGroupHandler.GetGroup)
+		groupRoutes.PUT("/:group_uuid", userGroupHandler.UpdateGroup)
+		groupRoutes.DELETE("/:group_uuid", userGroupHandler.DissolveGroup)
+
+		// Member management
+		groupRoutes.GET("/:group_uuid/members", userGroupHandler.GetMembers)
+		groupRoutes.POST("/:group_uuid/invite/search", userGroupHandler.SearchInvite)
+		groupRoutes.POST("/:group_uuid/invite/link", userGroupHandler.CreateLinkInvite)
+		groupRoutes.POST("/:group_uuid/members/:user_uuid/approve", userGroupHandler.ApproveMember)
+		groupRoutes.POST("/:group_uuid/members/:user_uuid/reject", userGroupHandler.RejectMember)
+		groupRoutes.DELETE("/:group_uuid/members/:user_uuid", userGroupHandler.RemoveMember)
+		groupRoutes.POST("/:group_uuid/leave", userGroupHandler.LeaveGroup)
+		groupRoutes.PUT("/:group_uuid/members/:user_uuid/role", userGroupHandler.UpdateMemberRole)
+
+		// Device management
+		groupRoutes.GET("/:group_uuid/devices", userGroupHandler.GetGroupDevices)
+		groupRoutes.POST("/:group_uuid/devices/share", userGroupHandler.ShareDeviceToGroup)
+		groupRoutes.DELETE("/:group_uuid/devices/:instance_uuid", userGroupHandler.RevokeGroupDeviceShare)
+
+		// Policy management
+		groupRoutes.GET("/:group_uuid/policy", userGroupHandler.GetPolicy)
+		groupRoutes.PUT("/:group_uuid/policy", userGroupHandler.UpdatePolicy)
+
+		// Invites
+		groupRoutes.GET("/:group_uuid/invites", userGroupHandler.GetPendingInvites)
+	}
+	// Accept invite (no group_uuid in path)
+	groupRoutes.POST("/invite/:invite_code/accept", userGroupHandler.AcceptInvite)
 
 	logGroup := v1.Group("/logs")
 	logGroup.Use(jwtAuth.JwtAuthMiddleWare())
