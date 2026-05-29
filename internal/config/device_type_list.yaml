@@ -95,7 +95,7 @@ device_types:
         retention_days: 365
 
       motion_detected:
-        description: "检测到移动（需 motion_sensor 能力）"
+        description: "检测到移动"
         severity: "info"
         output_params:
           - name: "acceleration"
@@ -293,7 +293,7 @@ device_types:
 
       power_consumption:
         writable: false
-        description: "累计用电量（需 power_meter 能力）"
+        description: "累计用电量"
         unit: "kWh"
         range: [0, 1000000]
         format: "float"

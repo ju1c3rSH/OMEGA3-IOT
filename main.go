@@ -112,6 +112,17 @@ func main() {
 	deviceGroupHandler := handler.NewDeviceGroupHandler(deviceGroupService)
 	log.Println("[Main] DeviceGroupHandler created")
 
+	// User Group system
+	groupRepo := repository.NewUserGroupRepository(db.DB)
+	groupMemberRepo := repository.NewGroupMemberRepository(db.DB)
+	groupPolicyRepo := repository.NewGroupPolicyRepository(db.DB)
+	groupInviteRepo := repository.NewGroupInviteRepository(db.DB)
+	groupDeviceShareRepo := repository.NewGroupDeviceShareRepository(db.DB)
+	userGroupService := service.NewUserGroupService(db.DB, groupRepo, groupMemberRepo, groupPolicyRepo, groupInviteRepo, groupDeviceShareRepo, instanceRepo, userRepo)
+	groupInviteService := service.NewGroupInviteService(userGroupService, groupInviteRepo, groupMemberRepo, groupPolicyRepo, groupRepo, userRepo)
+	userGroupHandler := handler.NewUserGroupHandler(userGroupService, groupInviteService)
+	log.Println("[Main] UserGroupHandler created")
+
 	jwtAuth := MiddleWares.NewJWTAuth(tokenBlacklistService)
 	log.Println("[Main] JWTAuth middleware created")
 
@@ -122,7 +133,7 @@ func main() {
 	pushHandler := push.NewPushHandler(pushService)
 	log.Println("[Main] PushService started")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler)
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler, userGroupHandler)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
