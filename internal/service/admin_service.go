@@ -3,6 +3,8 @@ package service
 import (
 	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
+	"OMEGA3-IOT/internal/utils"
+	"context"
 	"fmt"
 	"time"
 
@@ -19,6 +21,8 @@ type AdminService struct {
 	groupRepo     repository.UserGroupRepository
 	memberRepo    repository.GroupMemberRepository
 	adminLogRepo  repository.AdminLogRepository
+	dhService     *utils.DHService
+	nonceRepo     repository.NonceRepository
 }
 
 // NewAdminService creates a new AdminService.
@@ -31,6 +35,8 @@ func NewAdminService(
 	groupRepo repository.UserGroupRepository,
 	memberRepo repository.GroupMemberRepository,
 	adminLogRepo repository.AdminLogRepository,
+	dhService *utils.DHService,
+	nonceRepo repository.NonceRepository,
 ) *AdminService {
 	return &AdminService{
 		db:            db,
@@ -41,19 +47,52 @@ func NewAdminService(
 		groupRepo:     groupRepo,
 		memberRepo:    memberRepo,
 		adminLogRepo:  adminLogRepo,
+		dhService:     dhService,
+		nonceRepo:     nonceRepo,
 	}
 }
 
 // ==================== Admin Login ====================
 
-// AdminLogin authenticates an admin user and returns user info if successful.
-func (s *AdminService) AdminLogin(username, password string) (*model.User, error) {
+// AdminChallenge 生成管理员登录挑战（Nonce）
+func (s *AdminService) AdminChallenge(username string) (*model.ChallengeResponse, error) {
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, fmt.Errorf("user not found")
 	}
 
-	if user.CheckPassword(password) != nil {
+	role := model.Role(user.Role)
+	if !role.IsAdmin() {
+		return nil, fmt.Errorf("account is not an admin")
+	}
+
+	if user.Status != 0 {
+		return nil, fmt.Errorf("account is disabled")
+	}
+
+	nonce, err := utils.GenerateNonce()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate nonce")
+	}
+
+	nonceHex := utils.BigIntToHex(nonce)
+
+	if err := s.nonceRepo.StoreNonce(context.Background(), username, nonceHex, 0); err != nil {
+		return nil, fmt.Errorf("failed to store nonce")
+	}
+
+	params := s.dhService.Params()
+	return &model.ChallengeResponse{
+		Nonce: nonceHex,
+		P:     utils.BigIntToHex(params.P),
+		G:     utils.BigIntToHex(params.G),
+	}, nil
+}
+
+// AdminLogin 使用 DH 证明值验证管理员登录
+func (s *AdminService) AdminLogin(username, proofHex string) (*model.User, error) {
+	user, err := s.userRepo.FindByUsername(username)
+	if err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
@@ -66,7 +105,30 @@ func (s *AdminService) AdminLogin(username, password string) (*model.User, error
 		return nil, fmt.Errorf("account is disabled")
 	}
 
-	// Update last seen
+	nonceHex, err := s.nonceRepo.GetAndDeleteNonce(context.Background(), username)
+	if err != nil {
+		return nil, fmt.Errorf("challenge expired, please request a new one")
+	}
+
+	commitment, err := utils.HexToBigInt(user.PasswordHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid stored commitment")
+	}
+
+	proof, err := utils.HexToBigInt(proofHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid proof format")
+	}
+
+	nonce, err := utils.HexToBigInt(nonceHex)
+	if err != nil {
+		return nil, fmt.Errorf("invalid nonce format")
+	}
+
+	if !s.dhService.VerifyProof(proof, commitment, nonce) {
+		return nil, fmt.Errorf("invalid credentials")
+	}
+
 	_ = s.userRepo.UpdateFields(user.UserUUID, map[string]interface{}{
 		"last_seen": time.Now().Unix(),
 	})
@@ -244,18 +306,24 @@ func (s *AdminService) DeleteUser(targetUUID, adminUUID, ip string) error {
 	})
 }
 
-// ResetUserPassword resets a user's password.
+// ResetUserPassword resets a user's password (computes DH commitment server-side).
 func (s *AdminService) ResetUserPassword(targetUUID, newPassword, adminUUID, ip string) error {
-	user, err := s.userRepo.FindByUUID(targetUUID)
-	if err != nil {
+	// 验证用户存在
+	if _, err := s.userRepo.FindByUUID(targetUUID); err != nil {
 		return fmt.Errorf("user not found: %w", err)
 	}
-	if err := user.SetPassword(newPassword); err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
-	}
-	if err := s.userRepo.Update(user); err != nil {
+
+	// 服务端计算新密码的 DH 承诺值
+	commitment := s.dhService.ComputeCommitment(newPassword)
+	commitmentHex := utils.BigIntToHex(commitment)
+
+	if err := s.userRepo.UpdateFields(targetUUID, map[string]interface{}{
+		"password_hash": commitmentHex,
+		"updated_at":    time.Now().Unix(),
+	}); err != nil {
 		return err
 	}
+
 	s.logAction(adminUUID, "user.reset_password", "user", targetUUID, "", ip)
 	return nil
 }

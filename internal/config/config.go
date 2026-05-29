@@ -17,12 +17,15 @@ type Config struct {
 		MYSQLDSN string `mapstructure:"mysqldsn"`
 	} `mapstructure:"database"`
 	Server struct {
-		Port string `mapstructure:"port"`
+		Port       string `mapstructure:"port"`
+		TLSEnabled bool   `mapstructure:"tls_enabled"`
+		CertFile   string `mapstructure:"cert_file"`
+		KeyFile    string `mapstructure:"key_file"`
 	} `mapstructure:"server"`
 	MQTT struct {
 		Broker Broker `mapstructure:"broker"`
 		Client Client `mapstructure:"client"`
-		// TLS    TLS    `mapstructure:"tls"` // 如果需要 TLS
+		TLS    TLS    `mapstructure:"tls"`
 	}
 	IoTDB struct {
 		Host           string `mapstructure:"host"`
@@ -68,14 +71,13 @@ type Client struct {
 	QoS           byte   `mapstructure:"qos"` // 注意：Viper 默认可能解析为 int，需要处理
 }
 
-// // 如果需要 TLS 配置
-//
-//	type TLS struct {
-//		Enabled        bool   `mapstructure:"enabled"`
-//		CACertFile     string `mapstructure:"ca_cert_file"`
-//		ClientCertFile string `mapstructure:"client_cert_file"`
-//		ClientKeyFile  string `mapstructure:"client_key_file"`
-//	}
+// TLS 配置（用于 MQTT Broker 连接）
+type TLS struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	CACertFile     string `mapstructure:"ca_cert_file"`
+	ClientCertFile string `mapstructure:"client_cert_file"`
+	ClientKeyFile  string `mapstructure:"client_key_file"`
+}
 var RequiredFlags = []string{
 	"database.mysqldsn",
 	"server.port",
@@ -246,6 +248,9 @@ func defineFlags() {
 	pflag.String("database.mysqldsn", "", "MySQL DSN (Required)")
 
 	pflag.String("server.port", "", "Server Http Port (Required)")
+	pflag.Bool("server.tls_enabled", false, "Enable HTTPS (optional, auto-generates self-signed cert if cert_file/key_file empty)")
+	pflag.String("server.cert_file", "", "TLS certificate file path (optional, auto-generated if empty)")
+	pflag.String("server.key_file", "", "TLS private key file path (optional, auto-generated if empty)")
 
 	// IoTDB配置
 	pflag.String("iotdb.host", "", "IoTDB Host (Required)")
@@ -271,6 +276,12 @@ func defineFlags() {
 	pflag.Bool("mqtt.client.clean_session", true, "MQTT 清理会话")
 	pflag.Bool("mqtt.client.auto_reconnect", true, "MQTT 自动重连")
 	pflag.Int("mqtt.client.qos", 1, "MQTT QoS 级别 (0,1,2)")
+
+	// MQTT TLS 配置
+	pflag.Bool("mqtt.tls.enabled", false, "MQTT TLS enabled")
+	pflag.String("mqtt.tls.ca_cert_file", "", "MQTT CA certificate file")
+	pflag.String("mqtt.tls.client_cert_file", "", "MQTT client certificate file")
+	pflag.String("mqtt.tls.client_key_file", "", "MQTT client key file")
 
 	// Redis配置
 	pflag.String("redis.host", "localhost", "Redis Host")

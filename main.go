@@ -12,6 +12,7 @@ import (
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/utils"
 	"fmt"
 
 	"log"
@@ -91,11 +92,19 @@ func main() {
 	tokenBlacklistService := service.NewTokenBlacklistService(tokenBlacklistRepo)
 	log.Println("[Main] TokenBlacklistService created")
 
+	// DH service for password authentication
+	dhService := utils.NewDHService(utils.DefaultDHParams())
+	log.Println("[Main] DHService created")
+
+	// Nonce repository for challenge-response
+	nonceRepo := repository.NewNonceRepository(db.RedisClient, repository.DefaultNonceRepoConfig())
+	log.Println("[Main] NonceRepository created")
+
 	// Avatar service
 	avatarService := service.NewAvatarService("")
 	log.Println("[Main] AvatarService created")
 
-	userService = service.NewUserService(mqttService, userRepo, instanceRepo, deviceRegistrationRepo, iotdbClient, loggerService, avatarService)
+	userService = service.NewUserService(mqttService, userRepo, instanceRepo, deviceRegistrationRepo, iotdbClient, loggerService, avatarService, dhService, nonceRepo)
 	log.Println("[Main] UserService created")
 	userHandler := handler.NewUserHandler(userService, tokenBlacklistService)
 	log.Println("[Main] UserHandler created")
@@ -123,6 +132,19 @@ func main() {
 	userGroupHandler := handler.NewUserGroupHandler(userGroupService, groupInviteService)
 	log.Println("[Main] UserGroupHandler created")
 
+	// Admin system
+	adminUserRepo := repository.NewAdminUserRepository(db.DB)
+	adminDevRepo := repository.NewAdminDeviceRepository(db.DB)
+	adminLogRepo := repository.NewAdminLogRepository(db.DB)
+	adminService := service.NewAdminService(db.DB, userRepo, adminUserRepo, adminDevRepo, instanceRepo, groupRepo, groupMemberRepo, adminLogRepo, dhService, nonceRepo)
+	adminHandler := handler.NewAdminHandler(adminService)
+	log.Println("[Main] AdminHandler created")
+
+	// Bootstrap admin
+	if err := adminService.BootstrapAdmin("admin"); err != nil {
+		log.Printf("[Main] Warning: Bootstrap admin failed: %v", err)
+	}
+
 	jwtAuth := MiddleWares.NewJWTAuth(tokenBlacklistService)
 	log.Println("[Main] JWTAuth middleware created")
 
@@ -133,7 +155,7 @@ func main() {
 	pushHandler := push.NewPushHandler(pushService)
 	log.Println("[Main] PushService started")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler, userGroupHandler)
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)

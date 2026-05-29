@@ -1,15 +1,38 @@
 package utils
 
 import (
+	"fmt"
 	"github.com/golang-jwt/jwt"
+	"log"
 	"os"
 	"strings"
 	"time"
 )
 
-var jwtSecret = os.Getenv("JWT_SECRET")
+const (
+	TokenTTL         = 24 * time.Hour
+	JWTSecretEnvKey  = "JWT_SECRET"
+)
 
-const TokenTTL = 24 * time.Hour
+var jwtSecret string
+
+func init() {
+	jwtSecret = os.Getenv(JWTSecretEnvKey)
+	if jwtSecret == "" {
+		log.Fatalf("FATAL: %s environment variable is not set. JWT signing requires a secret.", JWTSecretEnvKey)
+	}
+	if len(jwtSecret) < 32 {
+		log.Printf("WARNING: %s is shorter than 32 characters. Consider using a longer secret for better security.", JWTSecretEnvKey)
+	}
+}
+
+// GetJWTSecret returns the JWT secret (for testing purposes only)
+func GetJWTSecret() string {
+	if jwtSecret == "" {
+		panic(fmt.Sprintf("%s not initialized", JWTSecretEnvKey))
+	}
+	return jwtSecret
+}
 
 type UserClaims struct {
 	JTI      string `json:"jti"`
