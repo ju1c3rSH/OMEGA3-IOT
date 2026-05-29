@@ -25,7 +25,19 @@ func InitDB(config config.Config) {
 		log.Fatal(err)
 	}
 
-	if err := DB.AutoMigrate(&model.User{}, &model.Instance{}, &model.DeviceRegistrationRecord{}, &model.DeviceShare{}, &model.DeviceGroup{}, &model.DeviceGroupRelation{}); err != nil {
+	if err := DB.AutoMigrate(
+		&model.User{},
+		&model.Instance{},
+		&model.DeviceRegistrationRecord{},
+		&model.DeviceShare{},
+		&model.DeviceGroup{},
+		&model.DeviceGroupRelation{},
+		&model.UserGroup{},
+		&model.GroupMember{},
+		&model.GroupPolicy{},
+		&model.GroupInvite{},
+		&model.GroupDeviceShare{},
+	); err != nil {
 		log.Fatal(err)
 	}
 
