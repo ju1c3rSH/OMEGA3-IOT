@@ -24,16 +24,41 @@ func NewAdminHandler(adminService *service.AdminService) *AdminHandler {
 
 // ==================== Admin Login ====================
 
-// Login handles POST /admin/login
-func (h *AdminHandler) Login(c *gin.Context) {
-	username := c.PostForm("username")
-	password := c.PostForm("password")
-	if username == "" || password == "" {
-		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Username and password are required"))
+// Challenge handles POST /admin/challenge
+func (h *AdminHandler) Challenge(c *gin.Context) {
+	var input model.ChallengeRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error()))
 		return
 	}
 
-	user, err := h.adminService.AdminLogin(username, password)
+	resp, err := h.adminService.AdminChallenge(input.Username)
+	if err != nil {
+		errMsg := err.Error()
+		if errMsg == "account is not an admin" {
+			c.JSON(http.StatusForbidden, types.NewErrorResponse(http.StatusForbidden, "Account is not an admin"))
+			return
+		}
+		if errMsg == "account is disabled" {
+			c.JSON(http.StatusForbidden, types.NewErrorResponse(http.StatusForbidden, "Account is disabled"))
+			return
+		}
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Challenge failed", errMsg))
+		return
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponse(resp))
+}
+
+// Login handles POST /admin/login
+func (h *AdminHandler) Login(c *gin.Context) {
+	var input model.LoginUser
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error()))
+		return
+	}
+
+	user, err := h.adminService.AdminLogin(input.Username, input.Proof)
 	if err != nil {
 		errMsg := err.Error()
 		if errMsg == "invalid credentials" {

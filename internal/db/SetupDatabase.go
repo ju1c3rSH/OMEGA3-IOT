@@ -37,6 +37,7 @@ func InitDB(config config.Config) {
 		&model.GroupPolicy{},
 		&model.GroupInvite{},
 		&model.GroupDeviceShare{},
+		&model.AdminLog{},
 	); err != nil {
 		log.Fatal(err)
 	}
