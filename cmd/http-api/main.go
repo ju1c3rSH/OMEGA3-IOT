@@ -7,6 +7,7 @@ import (
 	"OMEGA3-IOT/internal/logger"
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/utils"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -18,7 +19,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *handler.DeviceGroupHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler) error {
+func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *handler.DeviceGroupHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler, adminHandler *handler.AdminHandler) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -31,8 +32,18 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceGroupHandler, mqttService, jwtAuth, pushHandler, userGroupHandler)
+	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceGroupHandler, mqttService, jwtAuth, pushHandler, userGroupHandler, adminHandler)
 
 	log.Println("Starting server on :" + config.Server.Port)
+
+	if config.Server.TLSEnabled {
+		certFile, keyFile, err := utils.EnsureCertificates(config.Server.CertFile, config.Server.KeyFile)
+		if err != nil {
+			log.Fatalf("Failed to prepare TLS certificates: %v", err)
+		}
+		log.Printf("TLS enabled: cert=%s, key=%s", certFile, keyFile)
+		return r.RunTLS(":"+config.Server.Port, certFile, keyFile)
+	}
+
 	return r.Run(":" + config.Server.Port)
 }

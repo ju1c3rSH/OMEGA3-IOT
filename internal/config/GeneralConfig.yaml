@@ -3,6 +3,9 @@ database:
 
 server:
   port: 27015
+  tls_enabled: false
+  cert_file: ""     # 留空则自动生成自签名证书
+  key_file: ""      # 留空则自动生成自签名证书
 
 IoTDB:
   host: "lorelei.lat"

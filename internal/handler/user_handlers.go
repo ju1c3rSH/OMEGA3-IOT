@@ -29,15 +29,32 @@ func NewUserHandler(userSvc *service.UserService, blacklistSvc *service.TokenBla
 	}
 }
 
+// Challenge 处理登录挑战请求，返回 Nonce 和 DH 参数
+func (h *UserHandler) Challenge(c *gin.Context) {
+	var input model.ChallengeRequest
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error()))
+		return
+	}
+
+	resp, err := h.userService.Challenge(input.Username)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, types.NewErrorResponse(http.StatusBadRequest, "Challenge failed", err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, types.NewSuccessResponse(resp))
+}
+
 func (h *UserHandler) Register(c *gin.Context) {
 	var input model.RegUser
-	if err := c.ShouldBind(&input); err != nil {
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error())
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 
-	user, err := h.userService.Register(input.Username, input.Password, c.ClientIP())
+	user, err := h.userService.Register(input.Username, input.Commitment, c.ClientIP())
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			response := types.NewErrorResponse(http.StatusBadRequest, "Username already taken", err.Error())
@@ -65,15 +82,15 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 func (h *UserHandler) Login(c *gin.Context) {
 	var input model.LoginUser
-	if err := c.ShouldBind(&input); err != nil {
+	if err := c.ShouldBindJSON(&input); err != nil {
 		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid input", err.Error())
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
 
-	token, user, err := h.userService.Login(input.Username, input.Password, c.ClientIP())
+	token, user, err := h.userService.Login(input.Username, input.Proof, c.ClientIP())
 	if err != nil {
-		response := types.NewErrorResponse(http.StatusUnauthorized, "Invalid username or password", err.Error())
+		response := types.NewErrorResponse(http.StatusUnauthorized, "Invalid credentials", err.Error())
 		c.JSON(http.StatusUnauthorized, response)
 		return
 	}

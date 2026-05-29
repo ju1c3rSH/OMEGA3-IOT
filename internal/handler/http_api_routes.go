@@ -3,6 +3,7 @@ package handler
 import (
 	"OMEGA3-IOT/internal/handler/MiddleWares"
 	"OMEGA3-IOT/internal/logger"
+	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
@@ -27,7 +28,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler) {
 	router.Static("/uploads", "./uploads")
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
@@ -44,6 +45,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 
 	userGroup := v1.Group("/users")
 	{
+		userGroup.POST("/challenge", userHandler.Challenge)
 		userGroup.POST("/register", userHandler.Register)
 		userGroup.POST("/login", userHandler.Login)
 
@@ -129,6 +131,53 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	}
 	// Accept invite (no group_uuid in path)
 	groupRoutes.POST("/invite/:invite_code/accept", userGroupHandler.AcceptInvite)
+
+	// Admin routes
+	adminGroup := v1.Group("/admin")
+	{
+		// Public: admin challenge and login
+		adminGroup.POST("/challenge", adminHandler.Challenge)
+		adminGroup.POST("/login", adminHandler.Login)
+
+		// Protected: all admin endpoints require JWT + admin role
+		adminProtected := adminGroup.Group("")
+		adminProtected.Use(jwtAuth.JwtAuthMiddleWare(), MiddleWares.AdminAuthMiddleware())
+		{
+			adminProtected.POST("/logout", adminHandler.Logout)
+
+			// Admin management (super_admin only)
+			adminProtected.GET("/admins", MiddleWares.RequirePermission(model.PermAdminView), adminHandler.GetAdmins)
+			adminProtected.POST("/admins", MiddleWares.RequirePermission(model.PermAdminManage), adminHandler.PromoteUser)
+			adminProtected.PUT("/admins/:user_uuid", MiddleWares.RequirePermission(model.PermAdminManage), adminHandler.UpdateAdminRole)
+			adminProtected.DELETE("/admins/:user_uuid", MiddleWares.RequirePermission(model.PermAdminManage), adminHandler.DemoteAdmin)
+
+			// User management
+			adminProtected.GET("/users", MiddleWares.RequirePermission(model.PermUserView), adminHandler.ListUsers)
+			adminProtected.GET("/users/:user_uuid", MiddleWares.RequirePermission(model.PermUserView), adminHandler.GetUser)
+			adminProtected.PUT("/users/:user_uuid", MiddleWares.RequirePermission(model.PermUserEdit), adminHandler.EditUser)
+			adminProtected.PUT("/users/:user_uuid/status", MiddleWares.RequirePermission(model.PermUserStatus), adminHandler.UpdateUserStatus)
+			adminProtected.DELETE("/users/:user_uuid", MiddleWares.RequirePermission(model.PermUserDelete), adminHandler.DeleteUser)
+			adminProtected.POST("/users/:user_uuid/reset-password", MiddleWares.RequirePermission(model.PermUserReset), adminHandler.ResetPassword)
+
+			// Device management
+			adminProtected.GET("/devices", MiddleWares.RequirePermission(model.PermDeviceView), adminHandler.ListDevices)
+			adminProtected.GET("/devices/:instance_uuid", MiddleWares.RequirePermission(model.PermDeviceView), adminHandler.GetDevice)
+			adminProtected.PUT("/devices/:instance_uuid", MiddleWares.RequirePermission(model.PermDeviceEdit), adminHandler.EditDevice)
+			adminProtected.DELETE("/devices/:instance_uuid", MiddleWares.RequirePermission(model.PermDeviceDelete), adminHandler.DeleteDevice)
+			adminProtected.POST("/devices/:instance_uuid/transfer", MiddleWares.RequirePermission(model.PermDeviceTransfer), adminHandler.TransferDevice)
+
+			// Group management
+			adminProtected.GET("/groups", MiddleWares.RequirePermission(model.PermGroupView), adminHandler.ListGroups)
+			adminProtected.GET("/groups/:group_uuid", MiddleWares.RequirePermission(model.PermGroupView), adminHandler.GetGroup)
+			adminProtected.GET("/groups/:group_uuid/members", MiddleWares.RequirePermission(model.PermGroupView), adminHandler.GetGroupMembers)
+			adminProtected.DELETE("/groups/:group_uuid", MiddleWares.RequirePermission(model.PermGroupManage), adminHandler.DissolveGroup)
+			adminProtected.DELETE("/groups/:group_uuid/members/:user_uuid", MiddleWares.RequirePermission(model.PermGroupManage), adminHandler.RemoveGroupMember)
+
+			// System
+			adminProtected.GET("/stats/overview", MiddleWares.RequirePermission(model.PermSystemStats), adminHandler.GetStats)
+			adminProtected.GET("/logs", MiddleWares.RequirePermission(model.PermSystemLogs), adminHandler.GetLogs)
+		}
+	}
 
 	logGroup := v1.Group("/logs")
 	logGroup.Use(jwtAuth.JwtAuthMiddleWare())

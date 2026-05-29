@@ -1,20 +1,4 @@
 package utils
 
-import "golang.org/x/crypto/bcrypt"
-
-func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	return string(bytes), err
-}
-
-type password string
-
-func (p password) HashPassword(password string) string {
-	bytes, _ := bcrypt.GenerateFromPassword([]byte(password), 14)
-	return string(bytes)
-}
-
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
+// 注意：密码哈希已改用 DH 模幂运算方案
+// 旧的 bcrypt 方法已移除，参见 DHUtils.go

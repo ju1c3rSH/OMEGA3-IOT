@@ -21,6 +21,8 @@ type UserService struct {
 	iotDBClient            *db.IOTDBClient
 	loggerService          logger.LoggerInterface
 	avatarService          *AvatarService
+	dhService              *utils.DHService
+	nonceRepo              repository.NonceRepository
 }
 
 type GetUserAllDevicesResponse struct {
@@ -41,6 +43,8 @@ func NewUserService(
 	iotDBClient *db.IOTDBClient,
 	loggerService logger.LoggerInterface,
 	avatarService *AvatarService,
+	dhService *utils.DHService,
+	nonceRepo repository.NonceRepository,
 ) *UserService {
 	return &UserService{
 		mqttSvc:                mqttSvc,
@@ -50,6 +54,8 @@ func NewUserService(
 		iotDBClient:            iotDBClient,
 		loggerService:          loggerService,
 		avatarService:          avatarService,
+		dhService:              dhService,
+		nonceRepo:              nonceRepo,
 	}
 }
 
@@ -67,24 +73,24 @@ func (s *UserService) GetUserAllDevices(userUUID string) (*GetUserAllDevicesResp
 	return response, nil
 }
 
-func (s *UserService) Register(username, password string, ip string) (*model.User, error) {
+func (s *UserService) Register(username, commitmentHex string, ip string) (*model.User, error) {
 	// Check if user already exists
 	_, err := s.userRepo.FindByUsername(username)
 	if err == nil {
-		// Log failed registration
 		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelWarning, "Registration failed: username already exists", logger.LogEventSystemError))
 		return nil, fmt.Errorf("username already exists")
 	}
 
-	hashedPassword, err := utils.HashPassword(password)
+	// 验证 commitment 格式
+	commitment, err := utils.HexToBigInt(commitmentHex)
 	if err != nil {
-		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelPanic, "Registration failed: password hash error", logger.LogEventSystemError))
-		return nil, err
+		s.loggerService.EmitUserLog(logger.NewUserLogEvent("", logger.LogLevelWarning, "Registration failed: invalid commitment format", logger.LogEventSystemError))
+		return nil, fmt.Errorf("invalid commitment format")
 	}
 
 	user := &model.User{
 		UserName:     username,
-		PasswordHash: hashedPassword,
+		PasswordHash: utils.BigIntToHex(commitment),
 		Type:         1,
 		Status:       0,
 		Role:         1,
@@ -99,7 +105,6 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 		return nil, err
 	}
 
-	// Log successful registration
 	logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelInfo, "User registered successfully", logger.LogEventUserLogin)
 	logEvent.IPAddress = ip
 	s.loggerService.EmitUserLog(logEvent)
@@ -107,19 +112,73 @@ func (s *UserService) Register(username, password string, ip string) (*model.Use
 	return user, nil
 }
 
-func (s *UserService) Login(username, password string, clientIP string) (string, *model.User, error) {
+// Challenge 生成登录挑战（Nonce）
+func (s *UserService) Challenge(username string) (*model.ChallengeResponse, error) {
+	// 验证用户存在
+	_, err := s.userRepo.FindByUsername(username)
+	if err != nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// 生成随机 Nonce
+	nonce, err := utils.GenerateNonce()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate nonce")
+	}
+
+	nonceHex := utils.BigIntToHex(nonce)
+
+	// 存入 Redis（TTL=60s）
+	if err := s.nonceRepo.StoreNonce(context.Background(), username, nonceHex, 0); err != nil {
+		return nil, fmt.Errorf("failed to store nonce")
+	}
+
+	params := s.dhService.Params()
+	return &model.ChallengeResponse{
+		Nonce: nonceHex,
+		P:     utils.BigIntToHex(params.P),
+		G:     utils.BigIntToHex(params.G),
+	}, nil
+}
+
+// Login 使用 DH 证明值验证登录
+func (s *UserService) Login(username, proofHex string, clientIP string) (string, *model.User, error) {
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
-		// Log failed login - user not found
 		logEvent := logger.NewUserLogEvent("", logger.LogLevelWarning, "Login failed: user not found", logger.LogEventUserLogin)
 		logEvent.IPAddress = clientIP
 		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("invalid credentials")
 	}
 
-	if !utils.CheckPasswordHash(password, user.PasswordHash) {
-		// Log failed login - wrong password
-		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: invalid password", logger.LogEventUserLogin)
+	// 从 Redis 获取并删除 Nonce（一次性使用）
+	nonceHex, err := s.nonceRepo.GetAndDeleteNonce(context.Background(), username)
+	if err != nil {
+		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: nonce expired or already used", logger.LogEventUserLogin)
+		logEvent.IPAddress = clientIP
+		s.loggerService.EmitUserLog(logEvent)
+		return "", nil, fmt.Errorf("challenge expired, please request a new one")
+	}
+
+	// 解析 commitment 和 proof
+	commitment, err := utils.HexToBigInt(user.PasswordHash)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid stored commitment")
+	}
+
+	proof, err := utils.HexToBigInt(proofHex)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid proof format")
+	}
+
+	nonce, err := utils.HexToBigInt(nonceHex)
+	if err != nil {
+		return "", nil, fmt.Errorf("invalid nonce format")
+	}
+
+	// 验证 proof == commitment^nonce mod p
+	if !s.dhService.VerifyProof(proof, commitment, nonce) {
+		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: invalid proof", logger.LogEventUserLogin)
 		logEvent.IPAddress = clientIP
 		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("invalid credentials")
@@ -132,7 +191,6 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 		return "", nil, err
 	}
 
-	// Update last seen and IP
 	updates := map[string]interface{}{
 		"last_seen": time.Now().Unix(),
 		"ip":        clientIP,
@@ -141,7 +199,6 @@ func (s *UserService) Login(username, password string, clientIP string) (string,
 		log.Printf("Warning: failed to update user last_seen: %v", err)
 	}
 
-	// Log successful login
 	logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelInfo, "User logged in successfully", logger.LogEventUserLogin)
 	logEvent.IPAddress = clientIP
 	s.loggerService.EmitUserLog(logEvent)
