@@ -116,10 +116,10 @@ func main() {
 	logHandler := logger.NewLogHandler(loggerService)
 	log.Println("[Main] LogHandler created")
 
-	deviceGroupService := service.NewDeviceGroupService(db.DB, iotdbClient, loggerService)
-	log.Println("[Main] DeviceGroupService created")
-	deviceGroupHandler := handler.NewDeviceGroupHandler(deviceGroupService)
-	log.Println("[Main] DeviceGroupHandler created")
+	deviceFolderService := service.NewDeviceFolderService(db.DB, iotdbClient, loggerService)
+	log.Println("[Main] DeviceFolderService created")
+	deviceFolderHandler := handler.NewDeviceFolderHandler(deviceFolderService)
+	log.Println("[Main] DeviceFolderHandler created")
 
 	// User Group system
 	groupRepo := repository.NewUserGroupRepository(db.DB)
@@ -155,7 +155,11 @@ func main() {
 	pushHandler := push.NewPushHandler(pushService)
 	log.Println("[Main] PushService started")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceGroupHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler)
+	// EinkiCaptcha
+	captchaService := handler.InitCaptchaService()
+	log.Println("[Main] CaptchaService initialized")
+
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, captchaService)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)

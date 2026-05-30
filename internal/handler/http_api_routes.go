@@ -7,6 +7,7 @@ import (
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
+	"captcha"
 
 	"github.com/gin-gonic/gin"
 )
@@ -28,7 +29,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceGroupHandler *DeviceGroupHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, captchaService *captcha.CaptchaService) {
 	router.Static("/uploads", "./uploads")
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
@@ -42,6 +43,9 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	v1.GET("/health", func(c *gin.Context) {
 		c.JSON(200, types.NewSuccessResponseWithCode(gin.H{"status": "ok"}, 200, "OK"))
 	})
+
+	// EinkiCaptcha routes
+	RegisterCaptchaRoutes(v1, captchaService)
 
 	userGroup := v1.Group("/users")
 	{
@@ -71,17 +75,18 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
 		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
 
-		protected.POST("/devices/groups/create_group", deviceGroupHandler.CreateGroup)
-		protected.POST("/devices/:instance_uuid/join_group", deviceGroupHandler.JoinGroup)
-		protected.POST("/devices/:instance_uuid/quit_group", deviceGroupHandler.QuitGroup)
-		protected.GET("/devices/groups/:group_uuid/members", deviceGroupHandler.GetGroupMembers)
-		protected.POST("/devices/groups/:group_uuid/dismiss_group", deviceGroupHandler.DismissGroup)
+		// Device Folder routes (organizational grouping of devices)
+		protected.POST("/devices/folders", deviceFolderHandler.CreateFolder)
+		protected.POST("/devices/:instance_uuid/folders", deviceFolderHandler.AddDeviceToFolder)
+		protected.DELETE("/devices/:instance_uuid/folders/:folder_uuid", deviceFolderHandler.RemoveDeviceFromFolder)
+		protected.GET("/devices/folders/:folder_uuid/devices", deviceFolderHandler.GetFolderDevices)
+		protected.DELETE("/devices/folders/:folder_uuid", deviceFolderHandler.DeleteFolder)
 	}
 
 	usersMe := v1.Group("/users/me")
 	usersMe.Use(jwtAuth.JwtAuthMiddleWare())
 	{
-		usersMe.GET("/device_groups", deviceGroupHandler.GetGroups)
+		usersMe.GET("/device_folders", deviceFolderHandler.GetFolders)
 	}
 
 	deviceGroup := v1.Group("/device")

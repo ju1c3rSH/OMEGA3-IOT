@@ -9,17 +9,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type DeviceGroupHandler struct {
-	groupService *service.DeviceGroupService
+// DeviceFolderHandler handles HTTP requests for device folders.
+type DeviceFolderHandler struct {
+	folderService *service.DeviceFolderService
 }
 
-func NewDeviceGroupHandler(groupService *service.DeviceGroupService) *DeviceGroupHandler {
-	return &DeviceGroupHandler{
-		groupService: groupService,
+// NewDeviceFolderHandler creates a new DeviceFolderHandler.
+func NewDeviceFolderHandler(folderService *service.DeviceFolderService) *DeviceFolderHandler {
+	return &DeviceFolderHandler{
+		folderService: folderService,
 	}
 }
 
-func (h *DeviceGroupHandler) CreateGroup(c *gin.Context) {
+// CreateFolder handles POST /devices/folders
+func (h *DeviceFolderHandler) CreateFolder(c *gin.Context) {
 	var input struct {
 		Name        string `json:"name" binding:"required,max=128"`
 		Description string `json:"description,omitempty"`
@@ -38,21 +41,21 @@ func (h *DeviceGroupHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	// 直接使用userUUID，不再转换为int64
 	ownerUUID := userUUID.(string)
 
-	group, err := h.groupService.CreateGroup(input.Name, input.Description, ownerUUID)
+	folder, err := h.folderService.CreateFolder(input.Name, input.Description, ownerUUID)
 	if err != nil {
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create group", err.Error())
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create folder", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
-	response := types.NewSuccessResponseWithCode(group, http.StatusOK, "Group created successfully")
+	response := types.NewSuccessResponseWithCode(folder, http.StatusOK, "Folder created successfully")
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
+// AddDeviceToFolder handles POST /devices/:instance_uuid/folders
+func (h *DeviceFolderHandler) AddDeviceToFolder(c *gin.Context) {
 	deviceUUID := c.Param("instance_uuid")
 	if deviceUUID == "" {
 		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_uuid", "device uuid is required")
@@ -61,57 +64,7 @@ func (h *DeviceGroupHandler) JoinGroup(c *gin.Context) {
 	}
 
 	var input struct {
-		GroupUUID string `json:"group_uuid" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid request parameters", err.Error())
-		c.JSON(http.StatusBadRequest, response)
-		return
-	}
-
-	userUUID, exists := c.Get("user_uuid")
-	if !exists {
-		response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated")
-		c.JSON(http.StatusUnauthorized, response)
-		return
-	}
-	// 直接使用group_uuid字符串，不再解析为int64
-	groupUUID := input.GroupUUID
-	if err := h.groupService.JoinGroup(groupUUID, deviceUUID, userUUID.(string)); err != nil {
-		errMsg := err.Error()
-		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
-			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
-			c.JSON(http.StatusForbidden, response)
-			return
-		}
-		if errMsg == "device not found" {
-			response := types.NewErrorResponse(http.StatusNotFound, "Device not found", err.Error())
-			c.JSON(http.StatusNotFound, response)
-			return
-		}
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to join group", err.Error())
-		c.JSON(http.StatusInternalServerError, response)
-		return
-	}
-
-	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_uuid":  input.GroupUUID,
-		"device_uuid": deviceUUID,
-	}, http.StatusOK, "Device joined group successfully")
-	c.JSON(http.StatusOK, response)
-}
-
-func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
-	deviceUUID := c.Param("instance_uuid")
-	if deviceUUID == "" {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_uuid", "device uuid is required")
-		c.JSON(http.StatusBadRequest, response)
-		return
-	}
-
-	var input struct {
-		GroupUUID string `json:"group_uuid" binding:"required"`
+		FolderUUID string `json:"folder_uuid" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -127,9 +80,10 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.groupService.QuitGroup(input.GroupUUID, deviceUUID, userUUID.(string)); err != nil {
+	folderUUID := input.FolderUUID
+	if err := h.folderService.AddDeviceToFolder(folderUUID, deviceUUID, userUUID.(string)); err != nil {
 		errMsg := err.Error()
-		if errMsg == "invalid group" || errMsg == "device access denied" || errMsg == "permission denied" {
+		if errMsg == "invalid folder" || errMsg == "device access denied" || errMsg == "permission denied" {
 			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
 			c.JSON(http.StatusForbidden, response)
 			return
@@ -139,19 +93,67 @@ func (h *DeviceGroupHandler) QuitGroup(c *gin.Context) {
 			c.JSON(http.StatusNotFound, response)
 			return
 		}
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to quit group", err.Error())
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to add device to folder", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_uuid":  input.GroupUUID,
+		"folder_uuid": input.FolderUUID,
 		"device_uuid": deviceUUID,
-	}, http.StatusOK, "Device quit group successfully")
+	}, http.StatusOK, "Device added to folder successfully")
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *DeviceGroupHandler) GetGroups(c *gin.Context) {
+// RemoveDeviceFromFolder handles DELETE /devices/:instance_uuid/folders/:folder_uuid
+func (h *DeviceFolderHandler) RemoveDeviceFromFolder(c *gin.Context) {
+	deviceUUID := c.Param("instance_uuid")
+	if deviceUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid device_uuid", "device uuid is required")
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	folderUUID := c.Param("folder_uuid")
+	if folderUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid folder_uuid", "folder_uuid is required")
+		c.JSON(http.StatusBadRequest, response)
+		return
+	}
+
+	userUUID, exists := c.Get("user_uuid")
+	if !exists {
+		response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated")
+		c.JSON(http.StatusUnauthorized, response)
+		return
+	}
+
+	if err := h.folderService.RemoveDeviceFromFolder(folderUUID, deviceUUID, userUUID.(string)); err != nil {
+		errMsg := err.Error()
+		if errMsg == "invalid folder" || errMsg == "device access denied" || errMsg == "permission denied" {
+			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
+			c.JSON(http.StatusForbidden, response)
+			return
+		}
+		if errMsg == "device not found" {
+			response := types.NewErrorResponse(http.StatusNotFound, "Device not found", err.Error())
+			c.JSON(http.StatusNotFound, response)
+			return
+		}
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to remove device from folder", err.Error())
+		c.JSON(http.StatusInternalServerError, response)
+		return
+	}
+
+	response := types.NewSuccessResponseWithCode(gin.H{
+		"folder_uuid": folderUUID,
+		"device_uuid": deviceUUID,
+	}, http.StatusOK, "Device removed from folder successfully")
+	c.JSON(http.StatusOK, response)
+}
+
+// GetFolders handles GET /users/me/device_folders
+func (h *DeviceFolderHandler) GetFolders(c *gin.Context) {
 	userUUID, exists := c.Get("user_uuid")
 	if !exists {
 		response := types.NewErrorResponse(http.StatusUnauthorized, "User not authenticated")
@@ -175,31 +177,29 @@ func (h *DeviceGroupHandler) GetGroups(c *gin.Context) {
 		pageSize = 100
 	}
 
-	// 直接使用userUUID，不再转换为int64
 	ownerUUID := userUUID.(string)
 
-	groups, total, err := h.groupService.GetGroups(ownerUUID, page, pageSize)
+	folders, total, err := h.folderService.GetFolders(ownerUUID, page, pageSize)
 	if err != nil {
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to get groups", err.Error())
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to get folders", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"groups":    groups,
+		"folders":   folders,
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
-	}, http.StatusOK, "Groups retrieved successfully")
+	}, http.StatusOK, "Folders retrieved successfully")
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *DeviceGroupHandler) GetGroupMembers(c *gin.Context) {
-	// 直接使用group_uuid字符串，不再解析为int64
-	groupUUID := c.Param("group_uuid")
-	// 参数验证
-	if groupUUID == "" {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_uuid", "group_uuid is required")
+// GetFolderDevices handles GET /devices/folders/:folder_uuid/devices
+func (h *DeviceFolderHandler) GetFolderDevices(c *gin.Context) {
+	folderUUID := c.Param("folder_uuid")
+	if folderUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid folder_uuid", "folder_uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
@@ -227,33 +227,32 @@ func (h *DeviceGroupHandler) GetGroupMembers(c *gin.Context) {
 		pageSize = 100
 	}
 
-	members, total, err := h.groupService.GetGroupMembers(groupUUID, userUUID.(string), page, pageSize)
+	devices, total, err := h.folderService.GetFolderDevices(folderUUID, userUUID.(string), page, pageSize)
 	if err != nil {
-		if err.Error() == "Could not find a match group" {
-			response := types.NewErrorResponse(http.StatusNotFound, "Could not find a match group")
+		if err.Error() == "folder not found" {
+			response := types.NewErrorResponse(http.StatusNotFound, "Folder not found")
 			c.JSON(http.StatusNotFound, response)
 			return
 		}
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to get group members", err.Error())
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to get folder devices", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"members":   members,
+		"devices":   devices,
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
-	}, http.StatusOK, "Group members retrieved successfully")
+	}, http.StatusOK, "Folder devices retrieved successfully")
 	c.JSON(http.StatusOK, response)
 }
 
-func (h *DeviceGroupHandler) DismissGroup(c *gin.Context) {
-	// 直接使用group_uuid字符串，不再解析为int64
-	groupUUID := c.Param("group_uuid")
-	// 参数验证
-	if groupUUID == "" {
-		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid group_uuid", "group_uuid is required")
+// DeleteFolder handles DELETE /devices/folders/:folder_uuid
+func (h *DeviceFolderHandler) DeleteFolder(c *gin.Context) {
+	folderUUID := c.Param("folder_uuid")
+	if folderUUID == "" {
+		response := types.NewErrorResponse(http.StatusBadRequest, "Invalid folder_uuid", "folder_uuid is required")
 		c.JSON(http.StatusBadRequest, response)
 		return
 	}
@@ -265,19 +264,24 @@ func (h *DeviceGroupHandler) DismissGroup(c *gin.Context) {
 		return
 	}
 
-	if err := h.groupService.DismissGroup(groupUUID, userUUID.(string)); err != nil {
-		if err.Error() == "Could not find a match group" {
-			response := types.NewErrorResponse(http.StatusNotFound, "Could not find a match group")
+	if err := h.folderService.DeleteFolder(folderUUID, userUUID.(string)); err != nil {
+		if err.Error() == "folder not found" {
+			response := types.NewErrorResponse(http.StatusNotFound, "Folder not found")
 			c.JSON(http.StatusNotFound, response)
 			return
 		}
-		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to dismiss group", err.Error())
+		if err.Error() == "permission denied" {
+			response := types.NewErrorResponse(http.StatusForbidden, "Access denied", err.Error())
+			c.JSON(http.StatusForbidden, response)
+			return
+		}
+		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to delete folder", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
 		return
 	}
 
 	response := types.NewSuccessResponseWithCode(gin.H{
-		"group_uuid": groupUUID,
-	}, http.StatusOK, "Group dismissed successfully")
+		"folder_uuid": folderUUID,
+	}, http.StatusOK, "Folder deleted successfully")
 	c.JSON(http.StatusOK, response)
 }

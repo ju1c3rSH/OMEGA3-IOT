@@ -370,3 +370,175 @@ device_types:
             required: false
         timeout_sec: 30
         idempotent: false
+
+  # ============================================================================
+  # 类型 4: NewsReporter - AI驱动时事新闻分析设备
+  # ============================================================================
+  - id: 4
+    name: "NewsReporter"
+    description: "AI驱动的时事新闻分析设备，定时搜集全球新闻并通过Claude分析生成报告"
+
+    capabilities:
+      news_collector:
+        description: "新闻数据搜集能力（RSS/API）"
+        required: true
+      claude_cli:
+        description: "Claude Code CLI 执行能力"
+        required: true
+
+    properties:
+      latest_report:
+        writable: false
+        description: "最新报告摘要"
+        format: "string"
+        required: true
+
+      full_report_markdown:
+        writable: false
+        description: "完整Markdown报告全文（gzip+base64编码）"
+        format: "string"
+        required: true
+
+      last_execution_time:
+        writable: false
+        description: "最近一次执行时间"
+        format: "time"
+        required: true
+
+      online_time:
+        writable: false
+        description: "设备在线时间"
+        format: "time"
+        required: true
+
+      status:
+        writable: false
+        description: "状态机"
+        format: "string"
+        enum: ["idle", "collecting", "analyzing", "uploading", "error"]
+        required: true
+
+      last_error:
+        writable: false
+        description: "最近一次错误信息"
+        format: "string"
+        required: false
+
+      report_count:
+        writable: false
+        description: "累计报告生成次数"
+        format: "int"
+        required: true
+
+      schedule_cron:
+        writable: true
+        description: "执行调度cron表达式"
+        format: "string"
+        required: true
+
+    events:
+      report_generated:
+        description: "报告生成完成"
+        severity: "info"
+        output_params:
+          - name: "summary"
+            type: "string"
+            description: "报告摘要"
+          - name: "report_length"
+            type: "int"
+            description: "报告字数"
+          - name: "sources_count"
+            type: "int"
+            description: "数据源数量"
+        retention_days: 90
+
+      execution_error:
+        description: "执行过程中发生错误"
+        severity: "warning"
+        output_params:
+          - name: "error_message"
+            type: "string"
+            description: "错误信息"
+          - name: "stage"
+            type: "string"
+            description: "失败阶段"
+            enum: ["collecting", "analyzing", "uploading"]
+        retention_days: 90
+
+      content_alert:
+        description: "检测到重大经济/政治/民生变化"
+        severity: "critical"
+        output_params:
+          - name: "domain"
+            type: "string"
+            description: "领域"
+            enum: ["economy", "politics", "livelihood", "technology", "security"]
+          - name: "alert_summary"
+            type: "string"
+            description: "重大变化摘要"
+          - name: "impact_level"
+            type: "string"
+            description: "影响级别"
+            enum: ["high", "critical"]
+        retention_days: 365
+
+    actions:
+      execute_now:
+        description: "立即触发一次报告生成"
+        input_params: []
+        timeout_sec: 600
+        idempotent: false
+
+      get_prompt:
+        description: "获取当前提示词配置"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      update_prompt:
+        description: "更新提示词"
+        input_params:
+          - name: "new_prompt"
+            type: "string"
+            description: "新的提示词内容"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      update_template_vars:
+        description: "更新模板变量"
+        input_params:
+          - name: "variables"
+            type: "string"
+            description: "JSON格式的模板变量键值对"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      set_schedule:
+        description: "修改执行频率"
+        input_params:
+          - name: "cron_expr"
+            type: "string"
+            description: "cron表达式（如 \"*/30 * * * *\"）"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      pause:
+        description: "暂停自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      resume:
+        description: "恢复自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      get_status:
+        description: "查询当前详细状态"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true

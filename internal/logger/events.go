@@ -35,11 +35,11 @@ const (
 	LogEventUserDeviceBind      LogEventType = "user.device.bind"
 	LogEventUserPasswordChange  LogEventType = "user.password.change"
 
-	// Group Events
-	LogEventGroupCreated      LogEventType = "group.created"
-	LogEventDeviceJoinedGroup LogEventType = "device.joined.group"
-	LogEventDeviceQuitGroup   LogEventType = "device.quit.group"
-	LogEventGroupDismissed    LogEventType = "group.dismissed"
+	// Device Folder Events (organizational grouping)
+	LogEventFolderCreated           LogEventType = "folder.created"
+	LogEventDeviceAddedToFolder     LogEventType = "device.added.folder"
+	LogEventDeviceRemovedFromFolder LogEventType = "device.removed.folder"
+	LogEventFolderDeleted           LogEventType = "folder.deleted"
 
 	// System Events
 	LogEventSystemError LogEventType = "system.error"
