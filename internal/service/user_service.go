@@ -143,41 +143,58 @@ func (s *UserService) Challenge(username string) (*model.ChallengeResponse, erro
 
 // Login 使用 DH 证明值验证登录
 func (s *UserService) Login(username, proofHex string, clientIP string) (string, *model.User, error) {
+	log.Printf("[Login Debug] username=%s, clientIP=%s", username, clientIP)
+	log.Printf("[Login Debug] proofHex (first 40 chars)=%s", truncate(proofHex, 40))
+
 	user, err := s.userRepo.FindByUsername(username)
 	if err != nil {
+		log.Printf("[Login Debug] FAIL: FindByUsername error: %v", err)
 		logEvent := logger.NewUserLogEvent("", logger.LogLevelWarning, "Login failed: user not found", logger.LogEventUserLogin)
 		logEvent.IPAddress = clientIP
 		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("invalid credentials")
 	}
+	log.Printf("[Login Debug] user found: uuid=%s, password_hash (first 40 chars)=%s", user.UserUUID, truncate(user.PasswordHash, 40))
 
 	// 从 Redis 获取并删除 Nonce（一次性使用）
 	nonceHex, err := s.nonceRepo.GetAndDeleteNonce(context.Background(), username)
 	if err != nil {
+		log.Printf("[Login Debug] FAIL: GetAndDeleteNonce error: %v", err)
 		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: nonce expired or already used", logger.LogEventUserLogin)
 		logEvent.IPAddress = clientIP
 		s.loggerService.EmitUserLog(logEvent)
 		return "", nil, fmt.Errorf("challenge expired, please request a new one")
 	}
+	log.Printf("[Login Debug] nonceHex (first 40 chars)=%s", truncate(nonceHex, 40))
 
 	// 解析 commitment 和 proof
 	commitment, err := utils.HexToBigInt(user.PasswordHash)
 	if err != nil {
+		log.Printf("[Login Debug] FAIL: HexToBigInt(passwordHash) error: %v, raw value (first 60 chars)=%s", err, truncate(user.PasswordHash, 60))
 		return "", nil, fmt.Errorf("invalid stored commitment")
 	}
+	log.Printf("[Login Debug] commitment parsed ok, bitlen=%d", commitment.BitLen())
 
 	proof, err := utils.HexToBigInt(proofHex)
 	if err != nil {
+		log.Printf("[Login Debug] FAIL: HexToBigInt(proofHex) error: %v", err)
 		return "", nil, fmt.Errorf("invalid proof format")
 	}
+	log.Printf("[Login Debug] proof parsed ok, bitlen=%d", proof.BitLen())
 
 	nonce, err := utils.HexToBigInt(nonceHex)
 	if err != nil {
+		log.Printf("[Login Debug] FAIL: HexToBigInt(nonceHex) error: %v", err)
 		return "", nil, fmt.Errorf("invalid nonce format")
 	}
+	log.Printf("[Login Debug] nonce parsed ok, bitlen=%d", nonce.BitLen())
 
 	// 验证 proof == commitment^nonce mod p
-	if !s.dhService.VerifyProof(proof, commitment, nonce) {
+	log.Printf("[Login Debug] calling VerifyProof...")
+	verified := s.dhService.VerifyProof(proof, commitment, nonce)
+	log.Printf("[Login Debug] VerifyProof result: %v", verified)
+	if !verified {
+		log.Printf("[Login Debug] FAIL: proof mismatch for user %s", username)
 		logEvent := logger.NewUserLogEvent(user.UserUUID, logger.LogLevelWarning, "Login failed: invalid proof", logger.LogEventUserLogin)
 		logEvent.IPAddress = clientIP
 		s.loggerService.EmitUserLog(logEvent)
@@ -293,16 +310,16 @@ func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) err
 	}
 	defer s.iotDBClient.SessionPool.PutBack(session)
 
-	for _, meta := range instance.Properties.Items {
+	for propKey, meta := range instance.Properties.Items {
 		dataType, encoding, compression := s.iotDBClient.MapConvertToIotDBType(meta.Meta)
 
-		historicalPath := fmt.Sprintf("root.mm1.device_data.%s.%s", instance.InstanceUUID, meta.Meta.Description)
+		historicalPath := fmt.Sprintf("root.mm1.device_data.%s.%s", instance.InstanceUUID, propKey)
 
 		sql := fmt.Sprintf("CREATE TIMESERIES %s WITH DATATYPE=%d, ENCODING=%d, COMPRESSION=%d",
 			historicalPath, dataType, encoding, compression)
 		status, err := s.iotDBClient.ExecuteNonQuery(sql)
 		if checkErr := s.iotDBClient.CheckError(status, err); checkErr != nil {
-			return fmt.Errorf("[UserService] failed to create timeseries %s: %w", meta.Meta.Description, checkErr)
+			return fmt.Errorf("[UserService] failed to create timeseries %s: %w", propKey, checkErr)
 		}
 	}
 	return nil
@@ -358,4 +375,12 @@ func (s *UserService) ResetAvatar(userUUID string) (string, error) {
 	}
 
 	return avatarURL, nil
+}
+
+// truncate 截断字符串用于日志输出，避免刷屏
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

@@ -29,7 +29,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, captchaService *captcha.CaptchaService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, captchaService *captcha.CaptchaService, publicInstanceService *service.PublicInstanceService) {
 	router.Static("/uploads", "./uploads")
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
@@ -72,6 +72,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	{
 		protected.POST("/devices/:instance_uuid/getHistoryData", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "read"), GetDeviceHistoryHandlerFactory(deviceService))
 		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), SendActionHandlerFactory(mqttService, deviceService))
+		protected.GET("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "read"), GetDeviceActionsHandlerFactory(deviceService))
 		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
 		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
 
@@ -92,6 +93,22 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	deviceGroup := v1.Group("/device")
 	{
 		deviceGroup.POST("/deviceRegisterAnon", deviceHandler.DeviceRegisterAnonymously)
+	}
+
+	// Public Instance routes (no auth required for listing)
+	publicGroup := v1.Group("/public")
+	{
+		publicGroup.GET("/instances", GetPublicInstancesHandlerFactory(publicInstanceService))
+		publicGroup.GET("/instances/:instance_uuid", GetPublicInstanceDetailHandlerFactory(publicInstanceService))
+	}
+
+	// User favorites (JWT required)
+	favGroup := v1.Group("/users/me/favorites")
+	favGroup.Use(jwtAuth.JwtAuthMiddleWare())
+	{
+		favGroup.GET("", GetFavoritesHandlerFactory(publicInstanceService))
+		favGroup.POST("/:instance_uuid", AddFavoriteHandlerFactory(publicInstanceService))
+		favGroup.DELETE("/:instance_uuid", RemoveFavoriteHandlerFactory(publicInstanceService))
 	}
 
 	// WebSocket push channel
@@ -170,6 +187,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 			adminProtected.PUT("/devices/:instance_uuid", MiddleWares.RequirePermission(model.PermDeviceEdit), adminHandler.EditDevice)
 			adminProtected.DELETE("/devices/:instance_uuid", MiddleWares.RequirePermission(model.PermDeviceDelete), adminHandler.DeleteDevice)
 			adminProtected.POST("/devices/:instance_uuid/transfer", MiddleWares.RequirePermission(model.PermDeviceTransfer), adminHandler.TransferDevice)
+			adminProtected.PUT("/devices/:instance_uuid/public", MiddleWares.RequirePermission(model.PermDeviceEdit), TogglePublicHandlerFactory(publicInstanceService))
 
 			// Group management
 			adminProtected.GET("/groups", MiddleWares.RequirePermission(model.PermGroupView), adminHandler.ListGroups)

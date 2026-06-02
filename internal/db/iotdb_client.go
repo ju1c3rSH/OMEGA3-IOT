@@ -51,7 +51,7 @@ func (i *IOTDBClient) ExecuteNonQuery(sql string) (*common.TSStatus, error) {
 	return session.ExecuteNonQueryStatement(sql)
 }
 
-// InsertRecordTyped 调用 session.InsertRecord，需要提供 dataTypes
+// InsertRecordTyped inserts a record using SQL INSERT to bypass client library schema cache issues.
 func (i *IOTDBClient) InsertRecordTyped(deviceId string, measurements []string, dataTypes []client.TSDataType, values []interface{}, timestamp int64) error {
 	session, err := i.SessionPool.GetSession()
 	if err != nil {
@@ -59,7 +59,35 @@ func (i *IOTDBClient) InsertRecordTyped(deviceId string, measurements []string, 
 	}
 	defer i.SessionPool.PutBack(session)
 
-	status, err := session.InsertRecord(deviceId, measurements, dataTypes, values, timestamp)
+	// Build SQL: INSERT INTO root.mm1.device_data.{uuid}(timestamp, m1, m2, ...) VALUES(ts, v1, v2, ...)
+	measurementStr := strings.Join(measurements, ", ")
+	var valueStrs []string
+	for idx, v := range values {
+		switch dataTypes[idx] {
+		case client.INT32:
+			valueStrs = append(valueStrs, fmt.Sprintf("%d", v.(int32)))
+		case client.INT64:
+			valueStrs = append(valueStrs, fmt.Sprintf("%d", v.(int64)))
+		case client.FLOAT:
+			valueStrs = append(valueStrs, fmt.Sprintf("%f", v.(float32)))
+		case client.DOUBLE:
+			valueStrs = append(valueStrs, fmt.Sprintf("%f", v.(float64)))
+		case client.BOOLEAN:
+			valueStrs = append(valueStrs, fmt.Sprintf("%v", v.(bool)))
+		default:
+			// STRING — escape single quotes
+			s := fmt.Sprintf("%v", v)
+			s = strings.ReplaceAll(s, "'", "''")
+			if len(s) > 32768 {
+				s = s[:32768]
+			}
+			valueStrs = append(valueStrs, fmt.Sprintf("'%s'", s))
+		}
+	}
+	valueStr := strings.Join(valueStrs, ", ")
+
+	sql := fmt.Sprintf("INSERT INTO %s(timestamp, %s) VALUES(%d, %s)", deviceId, measurementStr, timestamp, valueStr)
+	status, err := session.ExecuteNonQueryStatement(sql)
 	return i.CheckError(status, err)
 }
 
@@ -83,7 +111,7 @@ func (i *IOTDBClient) MapConvertToIotDBType(meta model.PropertyMeta) (dataType c
 	case "int", "integer":
 		dataType = client.INT32
 		encoding = client.RLE
-	case "long":
+	case "long", "time":
 		dataType = client.INT64
 		encoding = client.RLE
 	case "float":
@@ -92,7 +120,7 @@ func (i *IOTDBClient) MapConvertToIotDBType(meta model.PropertyMeta) (dataType c
 	case "double":
 		dataType = client.DOUBLE
 		encoding = client.GORILLA
-	case "string", "text":
+	case "string", "text", "markdown":
 		dataType = client.STRING
 		encoding = client.PLAIN
 	case "boolean":

@@ -9,6 +9,9 @@
 | `POST` | `/api/v1/users/register` | ❌ | — | 用户注册 |
 | `POST` | `/api/v1/users/login` | ❌ | — | 用户登录 |
 | `POST` | `/api/v1/device/deviceRegisterAnon` | ❌ | — | 设备匿名注册 |
+| `GET` | `/api/v1/captcha` | ❌ | — | 获取验证码 |
+| `POST` | `/api/v1/captcha/verify` | ❌ | — | 验证验证码 |
+| `GET` | `/api/v1/captcha/sdk.js` | ❌ | — | 验证码 JS SDK |
 | `POST` | `/api/v1/admin/login` | ❌ | — | 管理员登录 |
 | `POST` | `/api/v1/users/logout` | ✅ | — | 用户登出 |
 | `GET` | `/api/v1/users/info` | ✅ | — | 获取用户信息 |
@@ -21,13 +24,14 @@
 | `GET` | `/api/v1/devices/accessible` | ✅ | — | 可访问设备列表 |
 | `POST` | `/api/v1/devices/{uuid}/getHistoryData` | ✅ | read | 历史数据 |
 | `POST` | `/api/v1/devices/{uuid}/actions` | ✅ | write | 发送指令 |
+| `GET` | `/api/v1/devices/{uuid}/actions` | ✅ | read | 获取设备支持的指令列表 |
 | `POST` | `/api/v1/devices/{uuid}/share` | ✅ | write | 分享设备 |
-| `POST` | `/api/v1/devices/groups/create_group` | ✅ | — | 创建设备组 |
-| `POST` | `/api/v1/devices/{uuid}/join_group` | ✅ | — | 设备加入组 |
-| `POST` | `/api/v1/devices/{uuid}/quit_group` | ✅ | — | 设备退出组 |
-| `GET` | `/api/v1/devices/groups/{uuid}/members` | ✅ | — | 设备组成员 |
-| `POST` | `/api/v1/devices/groups/{uuid}/dismiss_group` | ✅ | — | 解散设备组 |
-| `GET` | `/api/v1/users/me/device_groups` | ✅ | — | 我的设备组 |
+| `POST` | `/api/v1/devices/folders` | ✅ | — | 创建设备文件夹 |
+| `POST` | `/api/v1/devices/{uuid}/folders` | ✅ | — | 设备加入文件夹 |
+| `DELETE` | `/api/v1/devices/{uuid}/folders/{folder_uuid}` | ✅ | — | 设备移出文件夹 |
+| `GET` | `/api/v1/devices/folders/{uuid}/devices` | ✅ | — | 文件夹中的设备 |
+| `DELETE` | `/api/v1/devices/folders/{uuid}` | ✅ | — | 删除文件夹 |
+| `GET` | `/api/v1/users/me/device_folders` | ✅ | — | 我的设备文件夹 |
 | `POST` | `/api/v1/groups` | ✅ | — | 创建用户组 |
 | `GET` | `/api/v1/groups` | ✅ | — | 我的用户组列表 |
 | `GET` | `/api/v1/groups/{uuid}` | ✅ | — | 用户组详情 |

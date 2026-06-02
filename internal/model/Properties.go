@@ -102,6 +102,9 @@ func (tv *TypedValue) ToString() (string, error) {
 		case int:
 			t := time.UnixMilli(int64(v))
 			return t.Format(time.RFC3339), nil
+		case float64:
+			t := time.UnixMilli(int64(v))
+			return t.Format(time.RFC3339), nil
 		case time.Time:
 			return v.Format(time.RFC3339), nil
 		case string:
@@ -373,7 +376,7 @@ func convertValueToType(v interface{}, targetType string) (interface{}, error) {
 			return nil, fmt.Errorf("cannot convert %T to bool", v)
 		}
 
-	case "string":
+	case "string", "markdown":
 		switch val := v.(type) {
 		case string:
 			return val, nil
@@ -413,7 +416,10 @@ func convertValueToType(v interface{}, targetType string) (interface{}, error) {
 func validateValueWithMeta(tv *TypedValue, pm PropertyMeta) error {
 	// 1. 验证类型是否匹配
 	if tv.Type != pm.Format {
-		return fmt.Errorf("type mismatch: expected %s, got %s", pm.Format, tv.Type)
+		// markdown 是 string 的语义子类型，允许兼容
+		if !(pm.Format == "markdown" && tv.Type == "string") {
+			return fmt.Errorf("type mismatch: expected %s, got %s", pm.Format, tv.Type)
+		}
 	}
 
 	// 2. 验证范围
@@ -506,7 +512,7 @@ func NewTypedValueFromOld(oldValue string, valueType string) (*TypedValue, error
 			return nil, fmt.Errorf("failed to parse bool from '%s': %w", oldValue, err)
 		}
 
-	case "string":
+	case "string", "markdown":
 		convertedValue = oldValue
 
 	case "time":
@@ -532,9 +538,15 @@ func NewTypedValueFromOld(oldValue string, valueType string) (*TypedValue, error
 
 		if err != nil {
 			// 如果都失败，尝试解析 Unix 时间戳（秒、毫秒、微秒、纳秒）
+			// 先尝试整数格式
 			timestamp, parseIntErr := strconv.ParseInt(oldValue, 10, 64)
 			if parseIntErr != nil {
-				return nil, fmt.Errorf("failed to parse time from '%s': %w", oldValue, err)
+				// 再尝试浮点格式（如科学计数法 1.78019375e+09）
+				floatVal, parseFloatErr := strconv.ParseFloat(oldValue, 64)
+				if parseFloatErr != nil {
+					return nil, fmt.Errorf("failed to parse time from '%s': %w", oldValue, err)
+				}
+				timestamp = int64(floatVal)
 			}
 
 			// 根据时间戳的长度判断单位
