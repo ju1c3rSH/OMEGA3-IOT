@@ -248,16 +248,12 @@ func (m *MQTTService) handleActionResult(c mqtt.Client, msg mqtt.Message) {
 func extractDeviceUUIDFromTopic(topic string) (string, error) {
 	// 简单的字符串分割方法
 	parts := strings.Split(topic, "/")
-	if len(parts) >= 4 && parts[0] == "data" && parts[1] == "device" && parts[3] == "properties" {
-		return parts[2], nil
+	if len(parts) >= 4 && parts[0] == "data" && parts[1] == "device" {
+		// 支持 properties 和 action_result topic
+		if parts[3] == "properties" || parts[3] == "action_result" {
+			return parts[2], nil
+		}
 	}
-
-	// 或者使用正则表达式 (更灵活，但稍慢)
-	// re := regexp.MustCompile(`^data/device/([^/]+)/property$`)
-	// matches := re.FindStringSubmatch(topic)
-	// if len(matches) == 2 {
-	// 	return matches[1], nil
-	// }
 
 	return "", fmt.Errorf("invalid topic format for device UUID extraction: %s", topic)
 }
