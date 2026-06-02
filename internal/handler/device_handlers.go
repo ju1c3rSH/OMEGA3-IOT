@@ -289,6 +289,48 @@ func SendActionHandlerFactory(mqttService *service.MQTTService, deviceService *s
 	}
 }
 
+func GetDeviceActionsHandlerFactory(deviceService *service.DeviceService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		instanceUUID := c.Param("instance_uuid")
+		if instanceUUID == "" {
+			response := types.NewErrorResponse(http.StatusBadRequest, "Missing instance_uuid", "")
+			c.JSON(http.StatusBadRequest, response)
+			return
+		}
+
+		userUUID, exists := c.Get("user_uuid")
+		if !exists {
+			response := types.NewErrorResponse(http.StatusUnauthorized, "Unauthorized: missing user_uuid", "")
+			c.JSON(http.StatusUnauthorized, response)
+			return
+		}
+		_, ok := userUUID.(string)
+		if !ok {
+			response := types.NewErrorResponse(http.StatusUnauthorized, "Unauthorized: invalid user_uuid format", "")
+			c.JSON(http.StatusUnauthorized, response)
+			return
+		}
+
+		actions, err := deviceService.GetDeviceActions(instanceUUID)
+		if err != nil {
+			if err.Error() == "device not found" {
+				response := types.NewErrorResponse(http.StatusNotFound, "Device not found", "")
+				c.JSON(http.StatusNotFound, response)
+				return
+			}
+			response := types.NewErrorResponse(http.StatusInternalServerError, "Internal server error", err.Error())
+			c.JSON(http.StatusInternalServerError, response)
+			return
+		}
+
+		response := types.NewSuccessResponseWithCode(gin.H{
+			"instance_uuid": instanceUUID,
+			"actions":       actions,
+		}, http.StatusOK, "Device actions retrieved successfully")
+		c.JSON(http.StatusOK, response)
+	}
+}
+
 func GetDeviceHistoryHandlerFactory(deviceService *service.DeviceService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")

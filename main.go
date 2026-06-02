@@ -159,7 +159,11 @@ func main() {
 	captchaService := handler.InitCaptchaService()
 	log.Println("[Main] CaptchaService initialized")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, captchaService)
+	// Public Instance service
+	publicInstanceService := service.NewPublicInstanceService(db.DB)
+	log.Println("[Main] PublicInstanceService created")
+
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, captchaService, publicInstanceService)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)

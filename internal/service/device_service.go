@@ -116,17 +116,30 @@ func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp
 		properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 
 		instanceProp, propExists := instance.Properties.Items[measurement]
-		it, _ := model.NewTypedValueFromOld(valStr, instanceProp.Meta.Format)
 		if !propExists {
-
-			properties.Items[measurement] = &model.TypedInstancePropertyItem{
-				Value: *it,
-				Meta: model.PropertyMeta{
-					Description: "Unknown Prop",
-					Format:      "string",
-				},
+			availableKeys := make([]string, 0, len(instance.Properties.Items))
+			for k := range instance.Properties.Items {
+				availableKeys = append(availableKeys, k)
 			}
+			log.Printf("[DEBUG] getHistoryData - device: %s, missing measurement: '%s', value from IoTDB: '%v', available properties: %v",
+				instanceUUID, measurement, value, availableKeys)
+			continue
+		}
+
+		// 如果 IoTDB 返回的值为空，使用设备当前存储的值
+		if valStr == "" {
+			propCopy := *instanceProp
+			properties.Items[measurement] = &propCopy
 		} else {
+			it, convertErr := model.NewTypedValueFromOld(valStr, instanceProp.Meta.Format)
+			if it == nil {
+				log.Printf("[DEBUG] getHistoryData TypedValue is nil - device: %s, measurement: '%s', valStr: '%s', format: '%s', convertErr: %v",
+					instanceUUID, measurement, valStr, instanceProp.Meta.Format, convertErr)
+				// 转换失败时也使用设备当前存储的值
+				propCopy := *instanceProp
+				properties.Items[measurement] = &propCopy
+				continue
+			}
 			propCopy := *instanceProp
 			propCopy.Value = *it
 			properties.Items[measurement] = &propCopy
@@ -205,11 +218,23 @@ func (s *DeviceService) PropertiesToTelemetryData(instance *model.Instance) erro
 func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Instance) error {
 	historicalDevicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", instance.InstanceUUID))
 
+	// Only process properties defined in the device type
+	typeDef, _ := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+
 	measurements := make([]string, 0, len(instance.Properties.Items))
 	dataTypes := make([]client.TSDataType, 0, len(instance.Properties.Items))
 	values := make([]interface{}, 0, len(instance.Properties.Items))
 
+	log.Printf("[DeviceService] Processing telemetry for %s: %d properties in instance", instance.InstanceUUID, len(instance.Properties.Items))
+
 	for propKey, propItem := range instance.Properties.Items {
+		// Skip properties not in the device type definition
+		if typeDef != nil {
+			if _, ok := typeDef.Properties[propKey]; !ok {
+				log.Printf("[DeviceService] Skipping property '%s' (not in device type)", propKey)
+				continue
+			}
+		}
 		measurements = append(measurements, propKey)
 
 		tempValue, err := propItem.Value.ToString()
@@ -246,9 +271,27 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 			}
 			dataTypes = append(dataTypes, client.DOUBLE)
 			values = append(values, floatVal)
-		case "string", "text":
+		case "string", "text", "markdown":
 			dataTypes = append(dataTypes, client.STRING)
 			values = append(values, tempValue)
+		case "time":
+			// time values may arrive as float64 from JSON, convert directly from raw value
+			var intVal int64
+			switch v := propItem.Value.V.(type) {
+			case int64:
+				intVal = v
+			case float64:
+				intVal = int64(v)
+			case int:
+				intVal = int64(v)
+			default:
+				intVal, err = strconv.ParseInt(tempValue, 10, 64)
+				if err != nil {
+					return fmt.Errorf("failed to parse time property '%s' with value '%v': %w", propKey, propItem.Value.V, err)
+				}
+			}
+			dataTypes = append(dataTypes, client.INT64)
+			values = append(values, intVal)
 		case "boolean":
 			boolVal, err := strconv.ParseBool(tempValue)
 			if err != nil {
@@ -263,7 +306,20 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 		}
 	}
 
+	// Safety check: arrays must have the same length
+	if len(measurements) != len(dataTypes) || len(measurements) != len(values) {
+		return fmt.Errorf("[DeviceService] array length mismatch for %s: measurements=%d, dataTypes=%d, values=%d",
+			instance.InstanceUUID, len(measurements), len(dataTypes), len(values))
+	}
+
+	if len(measurements) == 0 {
+		log.Printf("[DeviceService] No valid properties to insert for %s", instance.InstanceUUID)
+		return nil
+	}
+
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+
+	log.Printf("[DeviceService] Inserting %d measurements for %s: %v", len(measurements), instance.InstanceUUID, measurements)
 
 	if err := s.iotDBClient.InsertRecordTyped(historicalDevicePath, measurements, dataTypes, values, timestamp); err != nil {
 		return fmt.Errorf("[DeviceService] failed to save telemetry from instance %s to IoTDB: %w", instance.InstanceUUID, err)
@@ -294,6 +350,30 @@ func (s *DeviceService) UpdateInstanceOnlineStatus(instanceUUID string, online b
 // GetDevicesByOwner returns all devices owned by a user
 func (s *DeviceService) GetDevicesByOwner(ownerUUID string) ([]model.Instance, error) {
 	return s.instanceRepo.FindByOwnerUUID(ownerUUID)
+}
+
+// GetDeviceActions returns the supported actions for a device instance by its UUID
+func (s *DeviceService) GetDeviceActions(instanceUUID string) (map[string]model.ActionMeta, error) {
+	instance, err := s.instanceRepo.FindByUUID(instanceUUID)
+	if err != nil {
+		return nil, fmt.Errorf("device not found: %w", err)
+	}
+
+	typeDef, ok := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+	if !ok {
+		return nil, fmt.Errorf("unknown device type: %s", instance.Type)
+	}
+
+	// Ensure nil slices are serialized as [] instead of null
+	actions := make(map[string]model.ActionMeta, len(typeDef.Actions))
+	for key, action := range typeDef.Actions {
+		if action.InputParams == nil {
+			action.InputParams = []model.InputParam{}
+		}
+		actions[key] = action
+	}
+
+	return actions, nil
 }
 
 // GetDeviceByUUIDAndVerifyHash retrieves a device by UUID and verifies the hash

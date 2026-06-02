@@ -395,8 +395,8 @@ device_types:
 
       full_report_markdown:
         writable: false
-        description: "完整Markdown报告全文（gzip+base64编码）"
-        format: "string"
+        description: "完整Markdown报告全文"
+        format: "markdown"
         required: true
 
       last_execution_time:
@@ -524,6 +524,255 @@ device_types:
             required: true
         timeout_sec: 10
         idempotent: true
+
+      pause:
+        description: "暂停自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      resume:
+        description: "恢复自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      get_status:
+        description: "查询当前详细状态"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+  # ============================================================================
+  # 类型 5: LocallyNewsReporter - 地方民生新闻报道设备
+  # ============================================================================
+  - id: 5
+    name: "LocallyNewsReporter"
+    description: "AI驱动的地方民生新闻报道设备，定时搜集本地新闻并生成地方民生简报"
+
+    capabilities:
+      news_collector:
+        description: "新闻数据搜集能力"
+        required: true
+      claude_cli:
+        description: "Claude Code CLI 执行能力"
+        required: true
+      web_scraper:
+        description: "本地新闻网站抓取能力"
+        required: true
+
+    properties:
+      city:
+        writable: true
+        description: "关注城市"
+        format: "string"
+        required: true
+
+      districts:
+        writable: true
+        description: "关注区域列表"
+        format: "json"
+        required: true
+
+      aliases:
+        writable: true
+        description: "城市别名列表"
+        format: "json"
+        required: false
+
+      latest_report:
+        writable: false
+        description: "最新报告摘要"
+        format: "string"
+        required: true
+
+      full_report_markdown:
+        writable: false
+        description: "完整Markdown报告全文"
+        format: "markdown"
+        required: true
+
+      last_execution_time:
+        writable: false
+        description: "最近一次执行时间"
+        format: "time"
+        required: true
+
+      online_time:
+        writable: false
+        description: "设备在线时间"
+        format: "time"
+        required: true
+
+      status:
+        writable: false
+        description: "状态机"
+        format: "string"
+        enum: ["idle", "discovering", "collecting", "analyzing", "uploading", "error"]
+        required: true
+
+      last_error:
+        writable: false
+        description: "最近一次错误信息"
+        format: "string"
+        required: false
+
+      report_count:
+        writable: false
+        description: "累计报告生成次数"
+        format: "int"
+        required: true
+
+      schedule_cron:
+        writable: true
+        description: "执行调度cron表达式"
+        format: "string"
+        required: true
+
+      discovery_cron:
+        writable: true
+        description: "新闻源发现调度cron表达式"
+        format: "string"
+        required: false
+
+      max_sites:
+        writable: true
+        description: "最大搜集站点数"
+        format: "int"
+        range: [1, 50]
+        required: false
+
+    events:
+      report_generated:
+        description: "地方新闻简报生成完成"
+        severity: "info"
+        output_params:
+          - name: "summary"
+            type: "string"
+            description: "报告摘要"
+          - name: "report_length"
+            type: "int"
+            description: "报告字数"
+          - name: "sources_count"
+            type: "int"
+            description: "数据源数量"
+          - name: "city"
+            type: "string"
+            description: "报道城市"
+        retention_days: 90
+
+      execution_error:
+        description: "执行过程中发生错误"
+        severity: "warning"
+        output_params:
+          - name: "error_message"
+            type: "string"
+            description: "错误信息"
+          - name: "stage"
+            type: "string"
+            description: "失败阶段"
+            enum: ["discovering", "collecting", "analyzing", "uploading"]
+        retention_days: 90
+
+      content_alert:
+        description: "检测到重大民生变化"
+        severity: "critical"
+        output_params:
+          - name: "domain"
+            type: "string"
+            description: "领域"
+            enum: ["traffic", "housing", "consumption", "healthcare", "education", "weather", "municipal", "community", "policy"]
+          - name: "alert_summary"
+            type: "string"
+            description: "重大变化摘要"
+          - name: "impact_level"
+            type: "string"
+            description: "影响级别"
+            enum: ["high", "critical"]
+        retention_days: 365
+
+      site_discovered:
+        description: "发现新的本地新闻源"
+        severity: "info"
+        output_params:
+          - name: "site_url"
+            type: "string"
+            description: "新闻源URL"
+          - name: "site_name"
+            type: "string"
+            description: "新闻源名称"
+        retention_days: 30
+
+    actions:
+      execute_now:
+        description: "立即触发一次新闻简报生成"
+        input_params: []
+        timeout_sec: 600
+        idempotent: false
+
+      get_prompt:
+        description: "获取当前提示词配置"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      update_prompt:
+        description: "更新提示词"
+        input_params:
+          - name: "new_prompt"
+            type: "string"
+            description: "新的提示词内容"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      update_template_vars:
+        description: "更新模板变量"
+        input_params:
+          - name: "variables"
+            type: "string"
+            description: "JSON格式的模板变量键值对"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      set_schedule:
+        description: "修改执行频率"
+        input_params:
+          - name: "cron_expr"
+            type: "string"
+            description: "cron表达式（如 \"*/20 * * * *\"）"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      update_region:
+        description: "更新关注地区配置"
+        input_params:
+          - name: "city"
+            type: "string"
+            description: "城市名称"
+            required: true
+          - name: "districts"
+            type: "string"
+            description: "JSON格式的区域列表"
+            required: true
+          - name: "aliases"
+            type: "string"
+            description: "JSON格式的城市别名列表"
+            required: false
+        timeout_sec: 10
+        idempotent: true
+
+      discover_sites:
+        description: "触发一次本地新闻源发现"
+        input_params:
+          - name: "search_queries"
+            type: "string"
+            description: "JSON格式的搜索关键词列表"
+            required: false
+        timeout_sec: 300
+        idempotent: false
 
       pause:
         description: "暂停自动执行"

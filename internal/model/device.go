@@ -28,6 +28,7 @@ type Instance struct {
 	Status      string `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
 	IsShared    bool   `gorm:"default:false" json:"is_shared"`
 	SharedCount int    `gorm:"default:0" json:"shared_count"`
+	IsPublic    bool   `gorm:"default:false;index" json:"is_public"`
 	Remark      string `gorm:"type:text" json:"remark,omitempty"`
 }
 

@@ -178,7 +178,7 @@ func ConvertToTargetType(value interface{}, targetType string) (interface{}, err
 		return ConvertToFloat(value)
 	case "bool":
 		return ConvertToBool(value)
-	case "string":
+	case "string", "markdown":
 		return ConvertToString(value)
 	case "time":
 		return ConvertToTime(value)
