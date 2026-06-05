@@ -8,6 +8,7 @@ import (
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
 	"captcha"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,6 +31,13 @@ func Cors() gin.HandlerFunc {
 }
 
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, captchaService *captcha.CaptchaService, publicInstanceService *service.PublicInstanceService) {
+	// Avatar files: use versioned URLs (?t=updatedAt), so each version
+	// is immutable. Aggressive caching is safe — new uploads get new timestamps.
+	router.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/uploads/avatars/") {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		}
+	})
 	router.Static("/uploads", "./uploads")
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")

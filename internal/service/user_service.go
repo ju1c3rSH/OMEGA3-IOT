@@ -231,7 +231,7 @@ func (s *UserService) GetUserInfoByUUID(userUUID string) (*model.User, error) {
 	return s.userRepo.FindByUUID(userUUID)
 }
 
-func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, deviceNick string, deviceRemark string) (*model.Instance, error) {
+func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, deviceNick string, deviceRemark string, bindBy model.BindMethod) (*model.Instance, error) {
 	// Find the registration record
 	record, err := s.deviceRegistrationRepo.FindByRegCode(regCode)
 	if err != nil {
@@ -255,7 +255,7 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		name = "Unnamed Device"
 	}
 
-	instance, err := model.NewInstanceFromConfig(name, userUUID, deviceType, record.VerifyHash, deviceRemark, record.DeviceUUID)
+	instance, err := model.NewInstanceFromConfig(name, userUUID, deviceType, record.VerifyHash, deviceRemark, record.DeviceUUID, bindBy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device instance: %w", err)
 	}
@@ -348,15 +348,16 @@ func (s *UserService) UpdateAvatar(userUUID string, reader io.Reader) (string, e
 		return "", fmt.Errorf("failed to save avatar: %w", err)
 	}
 
+	updatedAt := time.Now().Unix()
 	fields := map[string]interface{}{
 		"avatar":     avatarURL,
-		"updated_at": time.Now().Unix(),
+		"updated_at": updatedAt,
 	}
 	if err := s.userRepo.UpdateFields(userUUID, fields); err != nil {
 		return "", fmt.Errorf("failed to update avatar in database: %w", err)
 	}
 
-	return avatarURL, nil
+	return fmt.Sprintf("%s?t=%d", avatarURL, updatedAt), nil
 }
 
 // ResetAvatar generates a default identicon avatar for the user.
@@ -366,15 +367,16 @@ func (s *UserService) ResetAvatar(userUUID string) (string, error) {
 		return "", fmt.Errorf("failed to generate default avatar: %w", err)
 	}
 
+	updatedAt := time.Now().Unix()
 	fields := map[string]interface{}{
 		"avatar":     avatarURL,
-		"updated_at": time.Now().Unix(),
+		"updated_at": updatedAt,
 	}
 	if err := s.userRepo.UpdateFields(userUUID, fields); err != nil {
 		return "", fmt.Errorf("failed to update avatar in database: %w", err)
 	}
 
-	return avatarURL, nil
+	return fmt.Sprintf("%s?t=%d", avatarURL, updatedAt), nil
 }
 
 // truncate 截断字符串用于日志输出，避免刷屏

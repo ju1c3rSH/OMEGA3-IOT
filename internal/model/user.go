@@ -36,9 +36,10 @@ type RegUser struct {
 }
 
 type BindDeviceByRegCode struct {
-	RegCode      string `json:"reg_code"`
-	DeviceNick   string `json:"device_nick"`
-	DeviceRemark string `json:"device_remark"`
+	RegCode      string    `json:"reg_code"`
+	DeviceNick   string    `json:"device_nick"`
+	DeviceRemark string    `json:"device_remark"`
+	BindBy       BindMethod `json:"bind_by"` // 绑定方式：0=Bluetooth, 1=Cellular, 2=WiFi。不传默认为 0 (Bluetooth)
 }
 
 // LoginUser 登录请求（客户端发送 DH 证明值）

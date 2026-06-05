@@ -193,7 +193,7 @@ func (s *DeviceService) AddDevice(name string, deviceTypeID int, remark string, 
 		return nil, fmt.Errorf("invalid device type ID: %d", deviceTypeID)
 	}
 
-	instance, err := model.NewInstanceFromConfig(name, ownerUUID, deviceType, "", remark, utils.GenerateUUID().String())
+	instance, err := model.NewInstanceFromConfig(name, ownerUUID, deviceType, "", remark, utils.GenerateUUID().String(), model.BindByWiFi)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create device instance: %w", err)
 	}
