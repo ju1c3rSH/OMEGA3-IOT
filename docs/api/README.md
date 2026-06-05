@@ -18,6 +18,7 @@
 | [管理后台接口](./admin.md) | 管理员管理、用户/设备/组管理、系统统计 |
 | [数据模型](./models.md) | 所有数据模型的字段定义 |
 | [接口总览与快速参考](./reference.md) | 全部接口一览表、cURL 示例 |
+| [蓝牙配网协议](../bluetooth-provisioning-protocol.md) | BLE 配网通讯协议：帧格式、分包、安全机制 |
 
 ## 快速导航
 
