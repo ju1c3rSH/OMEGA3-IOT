@@ -9,6 +9,28 @@ import (
 	"time"
 )
 
+
+type BindMethod int
+
+const (
+	BindByBluetooth BindMethod = iota // 0 - 蓝牙配网
+	BindByCellular                    // 1 - 蜂窝网络
+	BindByWiFi                        // 2 - WiFi
+)
+
+func (b BindMethod) String() string {
+	switch b {
+	case BindByBluetooth:
+		return "Bluetooth"
+	case BindByCellular:
+		return "Cellular"
+	case BindByWiFi:
+		return "WiFi"
+	default:
+		return "Unknown"
+	}
+}
+
 type Instance struct {
 	ID           uint       `gorm:"primaryKey;autoIncrement" json:"id"`
 	InstanceUUID string     `gorm:"uniqueIndex;type:varchar(36)" json:"instance_uuid"`
@@ -24,8 +46,9 @@ type Instance struct {
 	UpdatedAt    time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 	VerifyHash   string     `gorm:"type:varchar(255)" json:"verify_hash"`
 	//IsActivated  bool       `gorm:"default:false" json:"is_activated"`不需要，因为有DeviceRegistrationRecord的机制，出现在这个库里的肯定是激活绑定了的
-	SN          string `gorm:"type:varchar(100);null" json:"sn,omitempty"`
-	Status      string `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
+	SN     string    `gorm:"type:varchar(100);null" json:"sn,omitempty"`
+	BindBy BindMethod `gorm:"type:tinyint;not null;default:0" json:"bind_by"` // 绑定方式：0=Bluetooth, 1=Cellular, 2=WiFi
+	Status string    `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
 	IsShared    bool   `gorm:"default:false" json:"is_shared"`
 	SharedCount int    `gorm:"default:0" json:"shared_count"`
 	IsPublic    bool   `gorm:"default:false;index" json:"is_public"`
@@ -189,7 +212,7 @@ func NewRegistrationRecord(deviceTypeID int, hashedVerifyCode string) (*DeviceRe
 		VerifyHash:   hashedVerifyCode,
 	}, nil
 }
-func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType, verifyHash string, remark string, deviceUUID string) (*Instance, error) {
+func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType, verifyHash string, remark string, deviceUUID string, bindBy BindMethod) (*Instance, error) {
 	if deviceType == nil {
 		return nil, fmt.Errorf("deviceType cannot be nil")
 	}
@@ -221,6 +244,7 @@ func NewInstanceFromConfig(name string, ownerUuid string, deviceType *DeviceType
 		LastSeen:     now,
 		Properties:   props,
 		VerifyHash:   verifyHash,
+		BindBy:       bindBy,
 		Status:       "active",
 		IsShared:     false,
 		SharedCount:  0,

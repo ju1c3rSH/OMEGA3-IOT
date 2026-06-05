@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/disintegration/imaging"
 	identicon "github.com/dgryski/go-identicon"
@@ -44,13 +45,11 @@ func NewAvatarService(uploadDir string) *AvatarService {
 // GenerateDefaultAvatar generates a GitHub-style identicon avatar from the user's UUID.
 // Returns the relative URL path to the generated avatar.
 func (as *AvatarService) GenerateDefaultAvatar(userUUID string) (string, error) {
+	// Archive any existing avatar (custom or previous default) before regenerating
+	as.archiveIfExists(userUUID)
+
 	filename := as.filename(userUUID)
 	filePath := filepath.Join(as.uploadDir, filename)
-
-	// Skip if already exists
-	if _, err := os.Stat(filePath); err == nil {
-		return as.baseURL + "/" + filename, nil
-	}
 
 	// Generate identicon from UUID hash
 	// Use UUID hash as both the key and the data for the identicon
@@ -79,6 +78,9 @@ func (as *AvatarService) GenerateDefaultAvatar(userUUID string) (string, error) 
 // SaveAvatar reads an image from the reader, resizes it to 256x256, and saves as PNG.
 // Returns the relative URL path to the saved avatar.
 func (as *AvatarService) SaveAvatar(userUUID string, reader io.Reader) (string, error) {
+	// Archive the old avatar before writing the new one
+	as.archiveIfExists(userUUID)
+
 	// Decode the uploaded image (supports JPEG, PNG, GIF, BMP, etc.)
 	img, _, err := image.Decode(reader)
 	if err != nil {
@@ -109,9 +111,19 @@ func (as *AvatarService) SaveAvatar(userUUID string, reader io.Reader) (string, 
 	return as.baseURL + "/" + filename, nil
 }
 
-// GetAvatarURL returns the URL path for a user's avatar.
-func (as *AvatarService) GetAvatarURL(userUUID string) string {
-	return as.baseURL + "/" + as.filename(userUUID)
+// archiveIfExists renames the current avatar file to a timestamped archive name.
+// This preserves old avatars while freeing the canonical filename for the new upload.
+func (as *AvatarService) archiveIfExists(userUUID string) {
+	canonicalPath := filepath.Join(as.uploadDir, as.filename(userUUID))
+	if _, err := os.Stat(canonicalPath); err == nil {
+		archiveName := fmt.Sprintf("%s_%d.png", userUUID, time.Now().UnixNano())
+		archivePath := filepath.Join(as.uploadDir, archiveName)
+		if err := os.Rename(canonicalPath, archivePath); err != nil {
+			log.Printf("[AvatarService] Failed to archive old avatar for %s: %v", userUUID, err)
+		} else {
+			log.Printf("[AvatarService] Archived old avatar for %s as %s", userUUID, archiveName)
+		}
+	}
 }
 
 // AvatarExists checks if an avatar file exists for the user.

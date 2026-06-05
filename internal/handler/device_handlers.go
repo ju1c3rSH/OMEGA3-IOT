@@ -59,7 +59,7 @@ func (d *DeviceHandler) AddDevice(c *gin.Context) {
 		return
 	}
 
-	instance, err := model.NewInstanceFromConfig(input.Name, userUUID.(string), deviceType, "", input.Description, utils.GenerateUUID().String())
+	instance, err := model.NewInstanceFromConfig(input.Name, userUUID.(string), deviceType, "", input.Description, utils.GenerateUUID().String(), model.BindByWiFi)
 	if err != nil {
 		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create device instance", err.Error())
 		c.JSON(http.StatusInternalServerError, response)

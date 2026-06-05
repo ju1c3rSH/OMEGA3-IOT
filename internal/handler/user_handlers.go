@@ -5,6 +5,7 @@ import (
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
 	"errors"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 	"log"
@@ -147,7 +148,7 @@ func (h *UserHandler) GetUserInfo(c *gin.Context) {
 		"uuid":        user.UserUUID,
 		"username":    user.UserName,
 		"nickname":    user.Nickname,
-		"avatar_url":  user.Avatar,
+		"avatar_url":  fmt.Sprintf("%s?t=%d", user.Avatar, user.UpdatedAt),
 		"description": user.Description,
 		"role":        user.Role,
 		"created_at":  user.CreatedAt,
@@ -197,7 +198,7 @@ func (h *UserHandler) BindDeviceByRegCode(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, response)
 		return
 	}
-	device, err := h.userService.BindDeviceByRegCode(userUUID.(string), input.RegCode, input.DeviceNick, input.DeviceRemark)
+	device, err := h.userService.BindDeviceByRegCode(userUUID.(string), input.RegCode, input.DeviceNick, input.DeviceRemark, input.BindBy)
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
