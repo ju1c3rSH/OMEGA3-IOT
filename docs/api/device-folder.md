@@ -100,6 +100,7 @@ Authorization: Bearer <token>
         "name": "客厅设备",
         "owner_uuid": "...",
         "description": "",
+        "device_count": 3,
         "created_at": "2026-05-29T00:00:00Z",
         "updated_at": "2026-05-29T00:00:00Z",
         "valid": 1
