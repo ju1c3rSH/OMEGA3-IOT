@@ -11,7 +11,6 @@
 | [设备接口](./device.md) | 设备操作：指令发送、历史数据、设备分享 |
 | [设备指令接口](./device-actions.md) | **新增** - 获取设备支持的指令列表（Android/iOS 对接指南） |
 | [设备文件夹接口](./device-folder.md) | 设备维度文件夹管理（原设备组） |
-| [验证码接口](./captcha.md) | Captcha 验证码生成与验证 |
 | [用户组接口](./user-group.md) | 用户协作分组：成员管理、邀请、策略、设备共享 |
 | [WebSocket 推送](./websocket.md) | 实时推送通道 |
 | [日志接口](./log.md) | 设备日志与用户操作日志 |

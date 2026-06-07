@@ -155,15 +155,11 @@ func main() {
 	pushHandler := push.NewPushHandler(pushService)
 	log.Println("[Main] PushService started")
 
-	// EinkiCaptcha
-	captchaService := handler.InitCaptchaService()
-	log.Println("[Main] CaptchaService initialized")
-
 	// Public Instance service
 	publicInstanceService := service.NewPublicInstanceService(db.DB)
 	log.Println("[Main] PublicInstanceService created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, captchaService, publicInstanceService)
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService)
 	log.Println("[Main] After calling http_api.Run")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)

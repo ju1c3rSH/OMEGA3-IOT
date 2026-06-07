@@ -2,10 +2,7 @@ module OMEGA3-IOT
 
 go 1.25.0
 
-replace captcha => ./captcha
-
 require (
-	captcha v0.0.0-00010101000000-000000000000
 	github.com/apache/iotdb-client-go v1.3.4
 	github.com/dgryski/go-identicon v0.0.0-20140725220403-371855927d74
 	github.com/disintegration/imaging v1.6.2
