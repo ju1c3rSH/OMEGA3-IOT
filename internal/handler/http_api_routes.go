@@ -7,7 +7,6 @@ import (
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
-	"captcha"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -30,7 +29,7 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, captchaService *captcha.CaptchaService, publicInstanceService *service.PublicInstanceService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, publicInstanceService *service.PublicInstanceService) {
 	// Avatar files: use versioned URLs (?t=updatedAt), so each version
 	// is immutable. Aggressive caching is safe — new uploads get new timestamps.
 	router.Use(func(c *gin.Context) {
@@ -51,9 +50,6 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	v1.GET("/health", func(c *gin.Context) {
 		c.JSON(200, types.NewSuccessResponseWithCode(gin.H{"status": "ok"}, 200, "OK"))
 	})
-
-	// EinkiCaptcha routes
-	RegisterCaptchaRoutes(v1, captchaService)
 
 	userGroup := v1.Group("/users")
 	{

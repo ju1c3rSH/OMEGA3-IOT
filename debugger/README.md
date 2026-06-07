@@ -7,7 +7,6 @@ A web-based debugging interface for the OMEGA3-IOT platform, built as a single-f
 ```
 debugger/
 ├── index.html              # Main debugger (Vue 3 + MQTT.js, single-file SPA)
-├── captcha-test.html       # Standalone CAPTCHA testing tool
 ├── css/                    # Legacy styles (unused by index.html)
 ├── js/                     # Legacy scripts (unused by index.html)
 ├── assets/fonts/           # Cached font files for offline use

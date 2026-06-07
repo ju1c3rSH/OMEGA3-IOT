@@ -9,9 +9,6 @@
 | `POST` | `/api/v1/users/register` | ❌ | — | 用户注册 |
 | `POST` | `/api/v1/users/login` | ❌ | — | 用户登录 |
 | `POST` | `/api/v1/device/deviceRegisterAnon` | ❌ | — | 设备匿名注册 |
-| `GET` | `/api/v1/captcha` | ❌ | — | 获取验证码 |
-| `POST` | `/api/v1/captcha/verify` | ❌ | — | 验证验证码 |
-| `GET` | `/api/v1/captcha/sdk.js` | ❌ | — | 验证码 JS SDK |
 | `POST` | `/api/v1/admin/login` | ❌ | — | 管理员登录 |
 | `POST` | `/api/v1/users/logout` | ✅ | — | 用户登出 |
 | `GET` | `/api/v1/users/info` | ✅ | — | 获取用户信息 |
