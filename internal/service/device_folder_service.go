@@ -204,14 +204,14 @@ func (s *DeviceFolderService) RemoveDeviceFromFolder(folderUUID string, deviceUU
 }
 
 // GetFolders returns folders owned by a user.
-func (s *DeviceFolderService) GetFolders(ownerUUID string, page, pageSize int) ([]model.DeviceFolder, int64, error) {
+func (s *DeviceFolderService) GetFolders(ownerUUID string, page, pageSize int) ([]model.DeviceFolderWithCount, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 10
 	}
-	return s.folderRepo.GetFoldersByOwner(ownerUUID, page, pageSize)
+	return s.folderRepo.GetFoldersByOwnerWithCount(ownerUUID, page, pageSize)
 }
 
 // GetFolderDevices returns devices in a folder.

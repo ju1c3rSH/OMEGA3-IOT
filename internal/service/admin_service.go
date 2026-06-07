@@ -396,6 +396,10 @@ func (s *AdminService) DeleteDevice(instanceUUID, adminUUID, ip string) error {
 			Updates(map[string]interface{}{"status": model.GroupDeviceShareStatusRevoked, "revoked_at": now}).Error; err != nil {
 			return err
 		}
+		// Remove device from all folders
+		if err := tx.Where("device_uuid = ?", instanceUUID).Delete(&model.DeviceFolderItem{}).Error; err != nil {
+			return err
+		}
 		// Delete device
 		if err := s.instanceRepo.DeleteByUUID(instanceUUID); err != nil {
 			return err
@@ -426,6 +430,11 @@ func (s *AdminService) TransferDevice(instanceUUID, newOwnerUUID string, keepOri
 		if err := s.instanceRepo.WithTx(tx).UpdateFields(instanceUUID, map[string]interface{}{
 			"owner_uuid": newOwnerUUID,
 		}); err != nil {
+			return err
+		}
+
+		// Remove device from all old owner's folders
+		if err := tx.Where("device_uuid = ?", instanceUUID).Delete(&model.DeviceFolderItem{}).Error; err != nil {
 			return err
 		}
 

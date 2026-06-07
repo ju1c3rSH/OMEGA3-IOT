@@ -32,6 +32,18 @@ func (DeviceFolderItem) TableName() string {
 	return "device_folder_item"
 }
 
+// DeviceFolderWithCount is a read-only DTO that extends DeviceFolder with a computed device count.
+type DeviceFolderWithCount struct {
+	FolderUUID  string    `json:"folder_uuid"`
+	Name        string    `json:"name"`
+	OwnerUUID   string    `json:"owner_uuid"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Description string    `json:"description,omitempty"`
+	Valid       int8      `json:"valid"`
+	DeviceCount int64     `json:"device_count"`
+}
+
 // FolderDeviceItem is a read-only DTO for listing devices within a folder.
 type FolderDeviceItem struct {
 	InstanceUUID string     `json:"instance_uuid"`
