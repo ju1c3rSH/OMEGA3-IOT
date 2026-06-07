@@ -11,6 +11,7 @@ type DeviceFolderRepository interface {
 	CreateFolder(folder *model.DeviceFolder) error
 	GetFolderByUUID(folderUUID string) (*model.DeviceFolder, error)
 	GetFoldersByOwner(ownerUUID string, page, pageSize int) ([]model.DeviceFolder, int64, error)
+	GetFoldersByOwnerWithCount(ownerUUID string, page, pageSize int) ([]model.DeviceFolderWithCount, int64, error)
 	UpdateFolder(folder *model.DeviceFolder) error
 	DeleteFolder(folderUUID string) error
 	DeleteFolderWithTx(tx *gorm.DB, folderUUID string) error
@@ -74,6 +75,50 @@ func (r *gormDeviceFolderRepository) GetFoldersByOwner(ownerUUID string, page, p
 		Offset(offset).
 		Find(&folders).Error
 
+	return folders, total, err
+}
+
+func (r *gormDeviceFolderRepository) GetFoldersByOwnerWithCount(ownerUUID string, page, pageSize int) ([]model.DeviceFolderWithCount, int64, error) {
+	var folders []model.DeviceFolderWithCount
+	var total int64
+
+	offset := (page - 1) * pageSize
+	if offset < 0 {
+		offset = 0
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+
+	if err := r.db.Raw(
+		"SELECT COUNT(*) FROM device_folder WHERE owner_uuid = ? AND valid = 1",
+		ownerUUID,
+	).Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT
+			df.folder_uuid,
+			df.name,
+			df.owner_uuid,
+			df.created_at,
+			df.updated_at,
+			df.description,
+			df.valid,
+			COALESCE(cnt.device_count, 0) AS device_count
+		FROM device_folder df
+		LEFT JOIN (
+			SELECT folder_uuid, COUNT(*) AS device_count
+			FROM device_folder_item
+			WHERE valid = 1
+			GROUP BY folder_uuid
+		) cnt ON df.folder_uuid = cnt.folder_uuid
+		WHERE df.owner_uuid = ? AND df.valid = 1
+		ORDER BY df.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+	err := r.db.Raw(query, ownerUUID, pageSize, offset).Scan(&folders).Error
 	return folders, total, err
 }
 
