@@ -132,7 +132,7 @@ func (d *DeviceHandler) DeviceRegisterAnonymously(c *gin.Context) {
 		return
 	}
 
-	_, valid := model.GlobalDeviceTypeManager.GetById(input.DeviceTypeID)
+	_, valid := model.GlobalDeviceTypeManager.GetById(int(input.DeviceTypeID))
 	if !valid {
 		response := types.NewErrorResponse(http.StatusBadRequest, "Unsupported device type", "")
 		c.JSON(http.StatusBadRequest, response)
@@ -140,7 +140,7 @@ func (d *DeviceHandler) DeviceRegisterAnonymously(c *gin.Context) {
 	}
 
 	hashedVerifyCode := utils.HashVerifyCode(verifyCode)
-	record, err := model.NewRegistrationRecord(input.DeviceTypeID, hashedVerifyCode)
+	record, err := model.NewRegistrationRecord(int(input.DeviceTypeID), hashedVerifyCode)
 	if err != nil {
 		response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to create registration record", err.Error())
 		c.JSON(http.StatusInternalServerError, response)
@@ -231,7 +231,7 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 			return
 		}
 
-		record, err := deviceService.RegisterDeviceAnonymously(input.DeviceTypeID, verifyCode)
+		record, err := deviceService.RegisterDeviceAnonymously(int(input.DeviceTypeID), verifyCode)
 		if err != nil {
 			if errors.Is(err, gorm.ErrDuplicatedKey) {
 				response := types.NewErrorResponse(http.StatusBadRequest, "Device name already exists", err.Error())
