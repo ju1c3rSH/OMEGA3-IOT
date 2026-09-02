@@ -791,3 +791,454 @@ device_types:
         input_params: []
         timeout_sec: 10
         idempotent: true
+
+  # ============================================================================
+  # 类型 6: FinReporter - AI金融投资分析参考设备
+  # ============================================================================
+  - id: 6
+    name: "FinReporter"
+    description: "AI驱动的金融投资分析参考设备：采集财经新闻，产出盘前简报/盘后总结/即时预警/周报，纯中性分析"
+
+    capabilities:
+      news_collector:
+        description: "财经新闻采集能力（RSS/API/网页抓取）"
+        required: true
+      claude_cli:
+        description: "Claude Code CLI 执行能力"
+        required: true
+
+    properties:
+      latest_report:
+        writable: false
+        description: "最新报告摘要"
+        format: "string"
+        required: true
+
+      full_report_markdown:
+        writable: false
+        description: "完整Markdown报告全文"
+        format: "markdown"
+        required: true
+
+      report_type:
+        writable: false
+        description: "最新报告类型"
+        format: "string"
+        enum: ["briefing", "review", "breaking", "weekly"]
+        required: false
+
+      alert_level:
+        writable: false
+        description: "预警级别"
+        format: "string"
+        enum: ["none", "info", "warning", "critical"]
+        required: false
+
+      markets:
+        writable: false
+        description: "覆盖市场列表（JSON数组）"
+        format: "json"
+        required: false
+
+      watchlist_hits:
+        writable: false
+        description: "报告命中的跟踪清单标的（JSON数组）"
+        format: "json"
+        required: false
+
+      last_execution_time:
+        writable: false
+        description: "上次报告完成时间"
+        format: "time"
+        required: true
+
+      online_time:
+        writable: false
+        description: "设备上线时间"
+        format: "time"
+        required: true
+
+      status:
+        writable: false
+        description: "状态值"
+        format: "string"
+        enum: ["idle", "collecting", "analyzing", "uploading", "error", "offline"]
+        required: true
+
+      last_error:
+        writable: false
+        description: "最后一次错误信息"
+        format: "string"
+        required: false
+
+      report_count:
+        writable: false
+        description: "累计报告生成次数"
+        format: "int"
+        required: true
+
+      schedule_cron:
+        writable: true
+        description: "执行调度cron表达式（JSON: briefing/review/weekly/breaking）"
+        format: "json"
+        required: false
+
+      daily_summary:
+        writable: false
+        description: "每日会话压缩摘要"
+        format: "string"
+        required: false
+
+    events:
+      fin_report_generated:
+        description: "金融分析报告已生成"
+        severity: "info"
+        output_params:
+          - name: "report_type"
+            type: "string"
+            description: "报告类型"
+          - name: "summary"
+            type: "string"
+            description: "报告摘要"
+          - name: "report_length"
+            type: "int"
+            description: "报告长度"
+          - name: "sources_count"
+            type: "int"
+            description: "信源数量"
+          - name: "new_items"
+            type: "int"
+            description: "新条目数量"
+          - name: "cached_items"
+            type: "int"
+            description: "缓存条目数量"
+          - name: "watchlist_hits"
+            type: "string"
+            description: "命中的跟踪清单"
+        retention_days: 90
+
+      fin_breaking_alert:
+        description: "重大财经事件即时预警"
+        severity: "warning"
+        output_params:
+          - name: "title"
+            type: "string"
+            description: "触发事件标题"
+          - name: "urgency"
+            type: "int"
+            description: "紧急程度评分"
+          - name: "markets"
+            type: "string"
+            description: "涉及市场"
+          - name: "sectors"
+            type: "string"
+            description: "涉及板块"
+          - name: "watchlist"
+            type: "string"
+            description: "涉及跟踪清单"
+          - name: "summary"
+            type: "string"
+            description: "分析摘要"
+        retention_days: 90
+
+      daily_compacted:
+        description: "每日会话压缩完成"
+        severity: "info"
+        output_params: []
+        retention_days: 30
+
+    actions:
+      execute_now:
+        description: "立即生成一次报告（按当前时段选择类型）"
+        input_params: []
+        timeout_sec: 600
+        idempotent: false
+
+      get_prompt:
+        description: "获取当前提示词模板"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      update_prompt:
+        description: "更新提示词"
+        input_params:
+          - name: "new_prompt"
+            type: "string"
+            description: "新的提示词内容"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      update_template_vars:
+        description: "更新模板变量"
+        input_params:
+          - name: "variables"
+            type: "string"
+            description: "JSON格式的模板变量键值对"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      set_schedule:
+        description: "修改执行频率"
+        input_params:
+          - name: "cron_expr"
+            type: "string"
+            description: "cron表达式"
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      pause:
+        description: "暂停自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      resume:
+        description: "恢复自动执行"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      get_status:
+        description: "查询当前详细状态"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+  # ============================================================================
+  # 类型 7: ElderlySmartSeeder - 适老化智能电动播种机
+  # ============================================================================
+  - id: 7
+    name: "ElderlySmartSeeder"
+    description: "适老化智能电动播种机，面向老年用户的低速/大按钮/语音辅助电动播种设备"
+
+    capabilities:
+      auto_seeding:
+        description: "支持自动播种控制"
+        required: true
+      voice_assistant:
+        description: "支持语音提示与播报（适老化关键能力）"
+        required: true
+      obstacle_avoidance:
+        description: "支持超声波/红外避障"
+        required: false
+      emergency_brake:
+        description: "支持紧急制动"
+        required: true
+      low_power_mode:
+        description: "支持低功耗休眠"
+        required: false
+      gps_module:
+        description: "支持 GPS/北斗定位"
+        required: false
+
+    properties:
+      battery_level:
+        writable: false
+        description: "当前电量百分比"
+        unit: "%"
+        range: [0, 100]
+        format: "int"
+        required: true
+
+      seed_level:
+        writable: false
+        description: "剩余种子量百分比"
+        unit: "%"
+        range: [0, 100]
+        format: "int"
+        required: true
+
+      seeding_depth:
+        writable: true
+        description: "播种深度"
+        unit: "cm"
+        range: [1, 10]
+        format: "float"
+        required: true
+
+      row_spacing:
+        writable: true
+        description: "行距"
+        unit: "cm"
+        range: [10, 50]
+        format: "int"
+        required: true
+
+      operation_mode:
+        writable: true
+        description: "工作模式"
+        format: "string"
+        enum: ["manual", "auto", "assist"]
+        required: true
+
+      speed:
+        writable: true
+        description: "行驶速度（适老化限速）"
+        unit: "m/s"
+        range: [0, 1.5]
+        format: "float"
+        required: true
+
+      device_status:
+        writable: false
+        description: "设备运行状态"
+        format: "string"
+        enum: ["idle", "seeding", "paused", "error", "charging", "returning"]
+        required: true
+
+      voice_volume:
+        writable: true
+        description: "语音播报音量"
+        range: [0, 100]
+        format: "int"
+        required: false
+
+      last_error:
+        writable: false
+        description: "最近错误信息"
+        format: "string"
+        required: false
+
+      total_area:
+        writable: false
+        description: "累计播种面积"
+        unit: "m2"
+        range: [0, 1000000]
+        format: "float"
+        required: false
+
+    events:
+      low_seed_alarm:
+        description: "种子余量不足告警"
+        severity: "warning"
+        output_params:
+          - name: "current_level"
+            type: "int"
+            description: "当前种子余量(%)"
+          - name: "threshold"
+            type: "int"
+            description: "告警阈值(%)"
+        retention_days: 30
+
+      obstacle_detected:
+        description: "检测到前方障碍物自动暂停"
+        severity: "warning"
+        output_params:
+          - name: "distance_cm"
+            type: "float"
+            description: "障碍物距离(cm)"
+          - name: "action"
+            type: "string"
+            description: "处置动作"
+            enum: ["paused", "avoided"]
+        retention_days: 30
+        required_capabilities: ["obstacle_avoidance"]
+
+      seeding_completed:
+        description: "播种作业完成"
+        severity: "info"
+        output_params:
+          - name: "area_m2"
+            type: "float"
+            description: "本次作业面积(m2)"
+          - name: "duration_sec"
+            type: "int"
+            description: "作业时长(秒)"
+        retention_days: 90
+
+      emergency_stop_triggered:
+        description: "紧急制动触发"
+        severity: "critical"
+        output_params:
+          - name: "trigger_source"
+            type: "string"
+            description: "触发源"
+            enum: ["button", "fall_detected", "obstacle", "remote"]
+          - name: "location"
+            type: "string"
+            description: "触发时位置"
+        retention_days: 365
+
+      low_battery_alarm:
+        description: "电量过低告警"
+        severity: "warning"
+        output_params:
+          - name: "current_level"
+            type: "int"
+            description: "当前电量(%)"
+          - name: "threshold"
+            type: "int"
+            description: "告警阈值(%)"
+        retention_days: 30
+
+    actions:
+      start_seeding:
+        description: "开始播种"
+        input_params: []
+        timeout_sec: 10
+        idempotent: false
+
+      pause_seeding:
+        description: "暂停播种"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      stop_seeding:
+        description: "停止并复位"
+        input_params: []
+        timeout_sec: 10
+        idempotent: true
+
+      set_seeding_params:
+        description: "设置播种参数（深度/行距/速度）"
+        input_params:
+          - name: "depth_cm"
+            type: "float"
+            description: "播种深度(cm)"
+            range: [1, 10]
+            required: true
+          - name: "row_spacing_cm"
+            type: "int"
+            description: "行距(cm)"
+            range: [10, 50]
+            required: true
+          - name: "speed_ms"
+            type: "float"
+            description: "行驶速度(m/s)"
+            range: [0, 1.5]
+            required: false
+        timeout_sec: 30
+        idempotent: true
+
+      set_voice_volume:
+        description: "设置语音播报音量（适老化）"
+        input_params:
+          - name: "volume"
+            type: "int"
+            description: "音量 0-100"
+            range: [0, 100]
+            required: true
+        timeout_sec: 10
+        idempotent: true
+
+      emergency_stop:
+        description: "紧急制动"
+        input_params: []
+        timeout_sec: 5
+        idempotent: true
+
+      return_home:
+        description: "一键返航/回桩"
+        input_params: []
+        timeout_sec: 60
+        idempotent: false
+
+      reboot:
+        description: "远程重启设备"
+        input_params: []
+        timeout_sec: 30
+        idempotent: true
