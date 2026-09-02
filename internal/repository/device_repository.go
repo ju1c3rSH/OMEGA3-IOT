@@ -10,6 +10,7 @@ type InstanceRepository interface {
 	FindByID(id uint) (*model.Instance, error)
 	FindByUUID(instanceUUID string) (*model.Instance, error)
 	FindByOwnerUUID(ownerUUID string) ([]model.Instance, error)
+	FindByUUIDs(instanceUUIDs []string) ([]model.Instance, error)
 	Update(instance *model.Instance) error
 	UpdateFields(instanceUUID string, fields map[string]interface{}) error
 	Delete(id uint) error
@@ -59,6 +60,49 @@ func (r *gormInstanceRepository) FindByOwnerUUID(ownerUUID string) ([]model.Inst
 	var instances []model.Instance
 	err := r.db.Where("owner_uuid = ?", ownerUUID).Find(&instances).Error
 	return instances, err
+}
+
+func (r *gormInstanceRepository) FindByUUIDs(instanceUUIDs []string) ([]model.Instance, error) {
+	if len(instanceUUIDs) == 0 {
+		return []model.Instance{}, nil
+	}
+	// Dedup to shrink IN list and avoid duplicate placeholders.
+	// See https://www.softwarejutsu.com/articles/n-plus-one-what-every-go-engineer-should-know (batch load with IN + dedup + map join)
+	seen := make(map[string]struct{}, len(instanceUUIDs))
+	uniq := make([]string, 0, len(instanceUUIDs))
+	for _, id := range instanceUUIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			uniq = append(uniq, id)
+		}
+	}
+	if len(uniq) == 0 {
+		return []model.Instance{}, nil
+	}
+	// Chunk IN clause to avoid DB limits:
+	// - Oracle 1000 expression limit (https://stackoverflow.com/questions/400255/how-to-put-more-than-1000-values-into-an-oracle-in-clause)
+	// - MySQL max_allowed_packet (https://stackoverflow.com/questions/1532366/mysql-number-of-items-within-in-clause)
+	// - PostgreSQL 65535 parameters (https://github.com/go-gorm/gorm/issues/6849, https://github.com/go-gorm/gorm/issues/6989)
+	// - GORM preload batch splitting (https://github.com/go-gorm/gorm/issues/7792)
+	// Batch of 1000 keeps plan efficient and avoids degraded index handling.
+	const batchSize = 1000
+	var result []model.Instance
+	for i := 0; i < len(uniq); i += batchSize {
+		end := i + batchSize
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		batch := uniq[i:end]
+		var batchResult []model.Instance
+		// GORM translates `IN ?` to `IN (?)` with bound args; single batched query
+		// replaces N per-row FindByUUID calls (see https://gorm.io/docs/query.html
+		// and https://blog.stackademic.com/the-n-1-query-problem-in-gorm-how-to-avoid-silent-performance-killers-856e028d4b15)
+		if err := r.db.Where("instance_uuid IN ?", batch).Find(&batchResult).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, batchResult...)
+	}
+	return result, nil
 }
 
 func (r *gormInstanceRepository) Update(instance *model.Instance) error {

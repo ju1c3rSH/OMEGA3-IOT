@@ -117,49 +117,98 @@ func (s *DeviceShareService) GetSharedWith(instanceUUID string) ([]model.DeviceS
 }
 
 func (s *DeviceShareService) GetAccessibleDevices(userUUID string) (*GetUserAllAccessibleDevicesResponse, error) {
-	// Get owned devices
+	// Batched N+1 fix: was 1+1+N+M queries (e.g., 82 for 40 shared + 40 owned).
+	// Now 3-4 queries: owned (1) + shares (1) + batch instances IN (?) (1) + batch GROUP BY COUNT (1).
+	// - GORM WHERE IN batch replaces per-row FindByUUID loop (see https://gorm.io/docs/query.html,
+	//   https://blog.stackademic.com/the-n-1-query-problem-in-gorm-how-to-avoid-silent-performance-killers-856e028d4b15,
+	//   https://www.shinagawa-web.com/en/works/go-gorm-n-plus-one-b2b-ticketing,
+	//   https://www.softwarejutsu.com/articles/n-plus-one-what-every-go-engineer-should-know,
+	//   https://cdn.jsdelivr.net/npm/miokit@2.0.13/skills/external/golang/gorm/performance.md).
+	// - Single GROUP BY COUNT replaces per-row CountActiveShares (see https://dev.mysql.com/doc/refman/26.7/en/group-by-optimization.html
+	//   and https://oneuptime.com/blog/post/2026-03-31-mysql-optimize-group-by/view — composite index on (status, instance_uuid) avoids temp table).
+	// Pitfalls avoided:
+	// - Empty IN slice: skip query (GORM would emit IN (NULL) or error).
+	// - Dedup ids: shrink placeholders, avoid duplicate GROUP BY work.
+	// - Large IN chunking: Oracle 1000 (https://stackoverflow.com/questions/400255/how-to-put-more-than-1000-values-into-an-oracle-in-clause),
+	//   MySQL max_allowed_packet (https://stackoverflow.com/questions/1532366/mysql-number-of-items-within-in-clause),
+	//   PG 65535 (https://github.com/go-gorm/gorm/issues/6849, https://github.com/go-gorm/gorm/issues/6989),
+	//   GORM batch splitting (https://github.com/go-gorm/gorm/issues/7792) — chunk at 1000.
+	// - Map join in Go keeps backward compat order and handles missing instances.
 	ownedDevices, err := s.instanceRepo.FindByOwnerUUID(userUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get shared devices
 	shares, err := s.deviceShareRepo.FindBySharedWithUUID(userUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	var sharedDevices []model.Instance
 	now := time.Now().Unix()
-	for _, share := range shares {
-		// Check if share is active and not expired
-		if share.Status != repository.StatusActive {
+	// Filter valid shares and collect deduped InstanceUUIDs for batch fetch
+	validShares := make([]model.DeviceShare, 0, len(shares))
+	sharedIDsSet := make(map[string]struct{}, len(shares))
+	sharedIDs := make([]string, 0, len(shares))
+	for _, sh := range shares {
+		if sh.Status != repository.StatusActive {
 			continue
 		}
-		if share.ExpiresAt != nil && *share.ExpiresAt <= now {
+		if sh.ExpiresAt != nil && *sh.ExpiresAt <= now {
 			continue
 		}
+		validShares = append(validShares, sh)
+		if _, ok := sharedIDsSet[sh.InstanceUUID]; !ok {
+			sharedIDsSet[sh.InstanceUUID] = struct{}{}
+			sharedIDs = append(sharedIDs, sh.InstanceUUID)
+		}
+	}
 
-		instance, err := s.instanceRepo.FindByUUID(share.InstanceUUID)
+	var sharedDevices []model.Instance
+	if len(sharedIDs) > 0 {
+		// Batch: SELECT * FROM instances WHERE instance_uuid IN (?) — single query replaces N FindByUUID
+		instances, err := s.instanceRepo.FindByUUIDs(sharedIDs)
 		if err != nil {
-			log.Printf("Warning: failed to find instance %s: %v", share.InstanceUUID, err)
-			continue
+			log.Printf("Warning: batch find instances failed: %v", err)
+			instances = nil
 		}
-		sharedDevices = append(sharedDevices, *instance)
+		// Map join: instance_uuid -> Instance
+		instMap := make(map[string]model.Instance, len(instances))
+		for _, inst := range instances {
+			instMap[inst.InstanceUUID] = inst
+		}
+		sharedDevices = make([]model.Instance, 0, len(validShares))
+		for _, sh := range validShares {
+			if inst, ok := instMap[sh.InstanceUUID]; ok {
+				sharedDevices = append(sharedDevices, inst)
+			} else {
+				log.Printf("Warning: failed to find instance %s (share %d)", sh.InstanceUUID, sh.ID)
+			}
+		}
 	}
 
 	allAccessibleDevices := append(ownedDevices, sharedDevices...)
 	count := len(allAccessibleDevices)
 
-	for i := range allAccessibleDevices {
-		instanceUUID := allAccessibleDevices[i].InstanceUUID
-		shareCount, err := s.deviceShareRepo.CountActiveShares(instanceUUID)
-		if err != nil {
-			log.Printf("Warning: failed to count shares for device %s: %v", instanceUUID, err)
-			shareCount = 0
+	// Batch counts: SELECT instance_uuid, COUNT(*) FROM device_shares WHERE instance_uuid IN (?) AND status='active' AND (expires_at IS NULL OR expires_at>now) GROUP BY instance_uuid
+	if len(allAccessibleDevices) > 0 {
+		allIDs := make([]string, 0, len(allAccessibleDevices))
+		seenAll := make(map[string]struct{}, len(allAccessibleDevices))
+		for _, d := range allAccessibleDevices {
+			if _, ok := seenAll[d.InstanceUUID]; !ok {
+				seenAll[d.InstanceUUID] = struct{}{}
+				allIDs = append(allIDs, d.InstanceUUID)
+			}
 		}
-		allAccessibleDevices[i].SharedCount = int(shareCount)
-		allAccessibleDevices[i].IsShared = shareCount > 0
+		countMap, err := s.deviceShareRepo.CountActiveSharesBatch(allIDs)
+		if err != nil {
+			log.Printf("Warning: batch count shares failed: %v", err)
+			countMap = map[string]int64{}
+		}
+		for i := range allAccessibleDevices {
+			c := countMap[allAccessibleDevices[i].InstanceUUID]
+			allAccessibleDevices[i].SharedCount = int(c)
+			allAccessibleDevices[i].IsShared = c > 0
+		}
 	}
 
 	response := &GetUserAllAccessibleDevicesResponse{InstanceCount: count, Instances: allAccessibleDevices}
