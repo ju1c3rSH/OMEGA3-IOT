@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -44,10 +43,7 @@ func (j *JWTAuth) JwtAuthMiddleWare() gin.HandlerFunc {
 			context.Abort()
 			return
 		}
-		if strings.HasPrefix(tokenString, "Bearer ") {
-			tokenString = tokenString[7:]
-		}
-
+		// Bearer handling delegated to utils.ParseToken (avoids double strip)
 		// Parse and validate JWT
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
