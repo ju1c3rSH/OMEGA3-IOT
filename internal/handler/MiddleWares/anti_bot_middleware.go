@@ -35,32 +35,34 @@ func NewRateLimiter(maxRequests int, window time.Duration) *RateLimiter {
 func (rl *RateLimiter) RateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		clientIP := c.ClientIP()
+		now := time.Now()
 
 		rl.mutex.Lock()
-		defer rl.mutex.Unlock()
-
 		record, exists := rl.records[clientIP]
 		if !exists {
 			record = &IPRequestRecord{
 				Count:      0,
-				LastAccess: time.Now(),
+				LastAccess: now,
 			}
 			rl.records[clientIP] = record
 		}
 
-		if time.Since(record.LastAccess) > rl.window {
+		if now.Sub(record.LastAccess) > rl.window {
 			record.Count = 0
-			record.LastAccess = time.Now()
+			record.LastAccess = now
 		}
 
 		if record.Count >= rl.maxRequests {
+			rl.mutex.Unlock()
 			c.JSON(http.StatusTooManyRequests, types.NewErrorResponse(http.StatusTooManyRequests, "Too many requests, please try again later"))
 			c.Abort()
 			return
 		}
 
 		record.Count++
-		record.LastAccess = time.Now()
+		record.LastAccess = now
+		rl.mutex.Unlock()
+
 		c.Next()
 	}
 }
