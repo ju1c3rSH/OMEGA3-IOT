@@ -4,7 +4,29 @@ import (
 	"OMEGA3-IOT/internal/model"
 	"fmt"
 	"regexp"
+	"sync"
 )
+
+// patternCache provides thread-safe caching for dynamic patterns that were not
+// precompiled at device-type load time (e.g., test-constructed PropertyMeta).
+// It avoids the per-call regexp.Compile cost of regexp.MatchString.
+// See: https://pkg.go.dev/regexp#Regexp.MatchString (Regexp is safe for concurrent use)
+// See: https://dev.to/gabrielanhaia/regexp-in-go-mustcompile-reuse-and-the-performance-youre-leaving-behind-2a5e
+var patternCache sync.Map // map[string]*regexp.Regexp
+
+func getCompiledPattern(pattern string) (*regexp.Regexp, error) {
+	if v, ok := patternCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	if actual, loaded := patternCache.LoadOrStore(pattern, re); loaded {
+		return actual.(*regexp.Regexp), nil
+	}
+	return re, nil
+}
 
 // ValidatePropertyValue checks whether a value satisfies all PropertyMeta constraints:
 // type match, range, enum, pattern, and writability.
@@ -29,29 +51,41 @@ func ValidatePropertyValue(meta model.PropertyMeta, value interface{}) error {
 		}
 	}
 
-	// Enum validation
+	// Enum validation — use prebuilt EnumSet (O(1)) when available, fallback to linear scan.
 	if len(meta.Enum) > 0 {
 		strVal := fmt.Sprintf("%v", converted)
-		found := false
-		for _, e := range meta.Enum {
-			if strVal == e {
-				found = true
-				break
+		if meta.EnumSet != nil {
+			if _, ok := meta.EnumSet[strVal]; !ok {
+				return fmt.Errorf("property '%s': value '%s' not in allowed values: %v", meta.Key, strVal, meta.Enum)
 			}
-		}
-		if !found {
-			return fmt.Errorf("property '%s': value '%s' not in allowed values: %v", meta.Key, strVal, meta.Enum)
+		} else {
+			found := false
+			for _, e := range meta.Enum {
+				if strVal == e {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("property '%s': value '%s' not in allowed values: %v", meta.Key, strVal, meta.Enum)
+			}
 		}
 	}
 
-	// Pattern validation
+	// Pattern validation — use precompiled Regexp if available, else cached compile.
 	if meta.Pattern != "" {
 		strVal := fmt.Sprintf("%v", converted)
-		matched, err := regexp.MatchString(meta.Pattern, strVal)
-		if err != nil {
-			return fmt.Errorf("property '%s': invalid pattern regex: %w", meta.Key, err)
+		var re *regexp.Regexp
+		if meta.CompiledPattern != nil {
+			re = meta.CompiledPattern
+		} else {
+			compiled, err := getCompiledPattern(meta.Pattern)
+			if err != nil {
+				return fmt.Errorf("property '%s': invalid pattern regex: %w", meta.Key, err)
+			}
+			re = compiled
 		}
-		if !matched {
+		if !re.MatchString(strVal) {
 			return fmt.Errorf("property '%s': value '%s' does not match pattern '%s'", meta.Key, strVal, meta.Pattern)
 		}
 	}

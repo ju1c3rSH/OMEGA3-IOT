@@ -1,5 +1,7 @@
 package model
 
+import "regexp"
+
 type PropertyMeta struct {
 	Key                  string    `yaml:"key" json:"key"`
 	Writable             bool      `yaml:"writable" json:"writable"`
@@ -11,4 +13,10 @@ type PropertyMeta struct {
 	Required             bool      `yaml:"required,omitempty" json:"required,omitempty"`
 	Pattern              string    `yaml:"pattern,omitempty" json:"pattern,omitempty"`
 	RequiredCapabilities []string  `yaml:"required_capabilities,omitempty" json:"required_capabilities,omitempty"`
+
+	// CompiledPattern is the precompiled regexp for Pattern, populated at load time.
+	// yaml/json/mapstructure tags "-" ensure it is not unmarshaled from config.
+	CompiledPattern *regexp.Regexp `yaml:"-" json:"-" mapstructure:"-"`
+	// EnumSet is a hash set for O(1) enum membership checks, built at load time.
+	EnumSet map[string]struct{} `yaml:"-" json:"-" mapstructure:"-"`
 }

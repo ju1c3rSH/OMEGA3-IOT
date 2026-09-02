@@ -6,39 +6,49 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	TokenTTL         = 24 * time.Hour
-	JWTSecretEnvKey  = "JWT_SECRET"
+	TokenTTL        = 24 * time.Hour
+	JWTSecretEnvKey = "JWT_SECRET"
 )
 
-var jwtSecret string
+var (
+	jwtSecret  string
+	jwtIssuer  string
+	jwtInitErr error
+	jwtOnce    sync.Once
+)
 
-func init() {
-	jwtSecret = os.Getenv(JWTSecretEnvKey)
-	if jwtSecret == "" {
+func initJWTSecret() {
+	secret := os.Getenv(JWTSecretEnvKey)
+	if secret == "" {
+		jwtInitErr = fmt.Errorf("%s not set", JWTSecretEnvKey)
 		log.Printf("WARNING: %s not set, JWT operations will fail until it is configured (lazy init)", JWTSecretEnvKey)
 		return
 	}
-	if len(jwtSecret) < 32 {
+	if len(secret) < 32 {
 		log.Printf("WARNING: %s is shorter than 32 characters. Consider using a longer secret for better security.", JWTSecretEnvKey)
 	}
+	jwtSecret = secret
+	// Cache issuer at startup to avoid per-request os.Getenv.
+	// See: https://pkg.go.dev/sync#Once (fast path ~1-2ns after first call via atomic load)
+	jwtIssuer = os.Getenv("OMEGA3_IOT")
+}
+
+func init() {
+	jwtOnce.Do(initJWTSecret)
 }
 
 func ensureJWTSecret() error {
-	if jwtSecret == "" {
-		env := os.Getenv(JWTSecretEnvKey)
-		if env == "" {
-			return fmt.Errorf("%s not set", JWTSecretEnvKey)
-		}
-		jwtSecret = env
-		if len(jwtSecret) < 32 {
-			log.Printf("WARNING: %s is shorter than 32 characters. Consider using a longer secret for better security.", JWTSecretEnvKey)
-		}
-	}
-	return nil
+	// sync.Once guarantees exactly-once init even under concurrent goroutines
+	// and provides a happens-before memory barrier so subsequent reads of
+	// jwtSecret are race-free. Avoids per-request os.Getenv syscall overhead.
+	// See: https://pkg.go.dev/sync#Once and https://blog.sgmansfield.com/2016/01/locking-in-crypto-rand/ (env global not thread-safe)
+	jwtOnce.Do(initJWTSecret)
+	return jwtInitErr
 }
 
 // GetJWTSecret returns the JWT secret (for testing purposes only)
@@ -61,16 +71,18 @@ func GenerateToken(username string, userUUID string, role int, jti string) (stri
 	if err := ensureJWTSecret(); err != nil {
 		return "", err
 	}
-	expirationTime := time.Now().Add(TokenTTL).Unix()
+	// Cache time.Now() once per token to avoid two syscalls and ensure
+	// ExpiresAt/IssuedAt are consistent within the same second.
+	now := time.Now()
 	claims := UserClaims{
 		JTI:      jti,
 		UserName: username,
 		Role:     role,
 		UUID:     userUUID,
 		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: expirationTime,
-			IssuedAt:  time.Now().Unix(),
-			Issuer:    os.Getenv("OMEGA3_IOT"),
+			ExpiresAt: now.Add(TokenTTL).Unix(),
+			IssuedAt:  now.Unix(),
+			Issuer:    jwtIssuer,
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

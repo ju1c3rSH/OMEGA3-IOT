@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"github.com/spf13/viper"
 	"log"
+	"regexp"
 	"sync"
 	"time"
 )
-
 
 type BindMethod int
 
@@ -46,13 +46,13 @@ type Instance struct {
 	UpdatedAt    time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 	VerifyHash   string     `gorm:"type:varchar(255)" json:"verify_hash"`
 	//IsActivated  bool       `gorm:"default:false" json:"is_activated"`不需要，因为有DeviceRegistrationRecord的机制，出现在这个库里的肯定是激活绑定了的
-	SN     string    `gorm:"type:varchar(100);null" json:"sn,omitempty"`
-	BindBy BindMethod `gorm:"type:tinyint;not null;default:0" json:"bind_by"` // 绑定方式：0=Bluetooth, 1=Cellular, 2=WiFi
-	Status string    `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
-	IsShared    bool   `gorm:"default:false" json:"is_shared"`
-	SharedCount int    `gorm:"default:0" json:"shared_count"`
-	IsPublic    bool   `gorm:"default:false;index" json:"is_public"`
-	Remark      string `gorm:"type:text" json:"remark,omitempty"`
+	SN          string     `gorm:"type:varchar(100);null" json:"sn,omitempty"`
+	BindBy      BindMethod `gorm:"type:tinyint;not null;default:0" json:"bind_by"` // 绑定方式：0=Bluetooth, 1=Cellular, 2=WiFi
+	Status      string     `gorm:"type:varchar(20);not null;default:'active'" json:"status"`
+	IsShared    bool       `gorm:"default:false" json:"is_shared"`
+	SharedCount int        `gorm:"default:0" json:"shared_count"`
+	IsPublic    bool       `gorm:"default:false;index" json:"is_public"`
+	Remark      string     `gorm:"type:text" json:"remark,omitempty"`
 }
 
 type DeviceHistoryData struct {
@@ -169,20 +169,41 @@ func (dtm *DeviceTypeManager) LoadDeviceTypeFromYAML(filePath string) error {
 	dtm.types = make(map[string]*DeviceType)
 	dtm.ids = make(map[int]*DeviceType)
 
-	for i, dt := range deviceTypesConfig.DeviceTypes {
-		deviceType := &dt
+	for i := range deviceTypesConfig.DeviceTypes {
+		dt := &deviceTypesConfig.DeviceTypes[i]
 
-		if deviceType.Name == "" {
+		// Precompile regex patterns and build enum sets for hot-path validation.
+		// This avoids per-request regexp.Compile and linear enum scans.
+		for key, meta := range dt.Properties {
+			if meta.Pattern != "" {
+				re, err := regexp.Compile(meta.Pattern)
+				if err != nil {
+					log.Printf("Warning: Device type %s property %s has invalid pattern %q: %v", dt.Name, key, meta.Pattern, err)
+				} else {
+					meta.CompiledPattern = re
+				}
+			}
+			if len(meta.Enum) > 0 {
+				enumSet := make(map[string]struct{}, len(meta.Enum))
+				for _, e := range meta.Enum {
+					enumSet[e] = struct{}{}
+				}
+				meta.EnumSet = enumSet
+			}
+			dt.Properties[key] = meta
+		}
+
+		if dt.Name == "" {
 			log.Printf("Warning: Device type %d has empty name\n", i)
 			continue
 		}
-		if deviceType.ID <= 0 {
-			log.Printf("Warning: Device type %s has invalid ID\n", deviceType.Name)
+		if dt.ID <= 0 {
+			log.Printf("Warning: Device type %s has invalid ID\n", dt.Name)
 			continue
 		}
 
-		dtm.ids[deviceType.ID] = deviceType
-		dtm.types[deviceType.Name] = deviceType
+		dtm.ids[dt.ID] = dt
+		dtm.types[dt.Name] = dt
 	}
 	return nil
 }

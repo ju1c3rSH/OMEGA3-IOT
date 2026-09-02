@@ -7,24 +7,24 @@ import (
 )
 
 const (
-	epoch             = int64(1577836800000)
-	workerBits        = uint(5)
-	datacenterBits    = uint(5)
-	sequenceBits      = uint(12)
-	workerMax         = int64(-1) ^ (int64(-1) << workerBits)
-	datacenterMax     = int64(-1) ^ (int64(-1) << datacenterBits)
-	sequenceMask      = int64(-1) ^ (int64(-1) << sequenceBits)
-	workerShift       = sequenceBits
-	datacenterShift   = sequenceBits + workerBits
-	timestampShift    = sequenceBits + workerBits + datacenterBits
+	epoch           = int64(1577836800000)
+	workerBits      = uint(5)
+	datacenterBits  = uint(5)
+	sequenceBits    = uint(12)
+	workerMax       = int64(-1) ^ (int64(-1) << workerBits)
+	datacenterMax   = int64(-1) ^ (int64(-1) << datacenterBits)
+	sequenceMask    = int64(-1) ^ (int64(-1) << sequenceBits)
+	workerShift     = sequenceBits
+	datacenterShift = sequenceBits + workerBits
+	timestampShift  = sequenceBits + workerBits + datacenterBits
 )
 
 type Snowflake struct {
-	mu            sync.Mutex
-	timestamp     int64
-	workerID      int64
-	datacenterID  int64
-	sequence      int64
+	mu           sync.Mutex
+	timestamp    int64
+	workerID     int64
+	datacenterID int64
+	sequence     int64
 }
 
 var (
@@ -56,9 +56,8 @@ func InitSnowflake(workerID, datacenterID int64) error {
 }
 
 func GenerateSnowflakeID() int64 {
-	if snowflakeInstance == nil {
-		InitSnowflake(1, 1)
-	}
+	// Ensure instance is initialized exactly once (sync.Once fast path ~1-2ns).
+	_ = InitSnowflake(1, 1)
 	return snowflakeInstance.NextID()
 }
 
@@ -66,13 +65,14 @@ func (s *Snowflake) NextID() int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	now := time.Now().UnixNano() / 1000000
+	// Use UnixMilli directly instead of UnixNano()/1e6 to reduce divisions.
+	now := time.Now().UnixMilli()
 
 	if s.timestamp == now {
 		s.sequence = (s.sequence + 1) & sequenceMask
 		if s.sequence == 0 {
 			for now <= s.timestamp {
-				now = time.Now().UnixNano() / 1000000
+				now = time.Now().UnixMilli()
 			}
 		}
 	} else {
