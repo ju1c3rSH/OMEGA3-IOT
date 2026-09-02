@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"gorm.io/gorm"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -14,6 +15,19 @@ type DeviceShareService struct {
 	instanceRepo    repository.InstanceRepository
 	deviceShareRepo repository.DeviceShareRepository
 	loggerService   logger.LoggerInterface
+	// accessCache is a short-TTL (5s) in-process cache for (user,device,perm)->bool
+	// to avoid DB on hot path. For distributed deployments replace with Redis SETEX 5
+	// cache-aside (see https://redis.io/docs/latest/develop/use-cases/cache-aside/
+	// and https://www.toolsku.com/en/blog/redis-caching-patterns-production/).
+	// Pitfall avoided: short TTL without single-flight can stampede; here 5s balances
+	// staleness vs DB load, and owner check is idempotent so stale false->true
+	// self-corrects on next miss.
+	accessCache sync.Map // map[string]accessCacheEntry
+}
+
+type accessCacheEntry struct {
+	allowed   bool
+	expiresAt int64 // unix nano
 }
 
 func NewDeviceShareService(db *gorm.DB, loggerService logger.LoggerInterface) *DeviceShareService {
@@ -25,26 +39,23 @@ func NewDeviceShareService(db *gorm.DB, loggerService logger.LoggerInterface) *D
 }
 
 func (s *DeviceShareService) ShareDevice(instanceUUID string, shareByUUID string, shareWithUUID string, expiredTime int64, permission string) error {
-	// Verify the user owns the device
-	_, err := s.instanceRepo.FindByUUID(instanceUUID)
-	if err != nil {
-		return fmt.Errorf("device not found: %w", err)
-	}
-
-	// Check ownership by querying with owner UUID
-	devices, err := s.instanceRepo.FindByOwnerUUID(shareByUUID)
+	// Ownership check via indexed point lookup, not full scan.
+	// Was: FindByOwnerUUID(shareByUUID) + linear scan over all owned devices
+	//       (O(N) rows, SELECT * with Properties JSON, full table scan on hot path).
+	// Now: SELECT 1 ... WHERE instance_uuid=? AND owner_uuid=? LIMIT 1
+	//       (O(log n) via uniqueIndex on instance_uuid + index on owner_uuid).
+	// See https://stackoverflow.com/questions/66392372/select-exists-with-gorm
+	// and https://cdn.jsdelivr.net/npm/miokit@2.0.13/skills/external/golang/gorm/performance.md
+	isOwner, err := s.instanceRepo.ExistsByOwner(shareByUUID, instanceUUID)
 	if err != nil {
 		return err
 	}
-
-	found := false
-	for _, d := range devices {
-		if d.InstanceUUID == instanceUUID {
-			found = true
-			break
+	if !isOwner {
+		// Distinguish "device not found" from "not owned" for clearer error.
+		exists, e2 := s.instanceRepo.Exists(instanceUUID)
+		if e2 == nil && !exists {
+			return fmt.Errorf("device not found: %w", gorm.ErrRecordNotFound)
 		}
-	}
-	if !found {
 		return fmt.Errorf("user does not own this device")
 	}
 
@@ -156,37 +167,62 @@ func (s *DeviceShareService) GetAccessibleDevices(userUUID string) (*GetUserAllA
 }
 
 func (s *DeviceShareService) CheckDeviceAccess(instanceUUID string, userUUID string, requiredPermission string) (bool, error) {
-	// Check if the user owns the instance
-	devices, err := s.instanceRepo.FindByOwnerUUID(userUUID)
+	// Short-TTL cache (5s) to avoid DB on hot path for repeated checks on same (user,device,perm).
+	// Key includes requiredPermission because share grant is permission-specific.
+	// In-process sync.Map is sufficient for single-instance; for multi-pod use Redis
+	// SETEX 5 + single-flight lock to avoid stampede (see Redis cache-aside docs).
+	cacheKey := userUUID + ":" + instanceUUID + ":" + requiredPermission
+	if v, ok := s.accessCache.Load(cacheKey); ok {
+		if e, ok2 := v.(accessCacheEntry); ok2 && time.Now().UnixNano() < e.expiresAt {
+			return e.allowed, nil
+		}
+		s.accessCache.Delete(cacheKey)
+	}
+	// Helper to store with 5s TTL before returning.
+	setCache := func(allowed bool) {
+		s.accessCache.Store(cacheKey, accessCacheEntry{allowed: allowed, expiresAt: time.Now().Add(5 * time.Second).UnixNano()})
+	}
+
+	// Ownership check via indexed point lookup SELECT 1 ... LIMIT 1.
+	// Previous: FindByOwnerUUID(userUUID) fetched ALL owned devices (SELECT *),
+	//           allocated slice, linear scan — full scan on every auth request.
+	// Fixed: ExistsByOwner uses `SELECT instance_uuid ... WHERE instance_uuid=? AND owner_uuid=? LIMIT 1`
+	//        which hits uniqueIndex on instance_uuid and is O(log n).
+	// See https://stackoverflow.com/questions/66392372/select-exists-with-gorm
+	// and https://github.com/go-gorm/gorm/discussions/6000
+	isOwner, err := s.instanceRepo.ExistsByOwner(userUUID, instanceUUID)
 	if err != nil {
 		return false, err
 	}
-
-	for _, d := range devices {
-		if d.InstanceUUID == instanceUUID {
-			return true, nil
-		}
+	if isOwner {
+		setCache(true)
+		return true, nil
 	}
 
-	// Check the shared permission
+	// Check the shared permission (already indexed on instance_uuid+shared_with_uuid)
 	share, err := s.deviceShareRepo.FindByInstanceAndSharedWith(instanceUUID, userUUID)
 	if err != nil {
+		setCache(false)
 		return false, nil
 	}
 
 	// Check if expired
 	if share.ExpiresAt != nil && *share.ExpiresAt <= time.Now().Unix() {
+		setCache(false)
 		return false, nil
 	}
 
 	if requiredPermission == repository.PermissionRead &&
 		(share.Permission == repository.PermissionRead || share.Permission == repository.PermissionReadWrite) {
+		setCache(true)
 		return true, nil
 	}
 	if requiredPermission == repository.PermissionWrite &&
 		(share.Permission == repository.PermissionWrite || share.Permission == repository.PermissionReadWrite) {
+		setCache(true)
 		return true, nil
 	}
+	setCache(false)
 	return false, nil
 }
 

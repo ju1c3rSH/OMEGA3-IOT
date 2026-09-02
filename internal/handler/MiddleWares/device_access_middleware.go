@@ -7,7 +7,14 @@ import (
 	"net/http"
 )
 
-func DeviceAccessMiddleware(deviceShareService service.DeviceShareService, requiedPermission string) gin.HandlerFunc {
+// DeviceAccessMiddleware checks device access via DeviceShareService.
+// NOTE: deviceShareService is *service.DeviceShareService (pointer), not value.
+// Pass-by-value would copy the entire struct (including sync.Map cache, mutexes, etc.)
+// on every request where the middleware is instantiated, causing extra allocation
+// and potential race if the struct ever contains non-copy-safe fields.
+// See https://gin-gonic.com/en/docs/middleware/goroutines-inside-a-middleware/
+// and https://stackoverflow.com/questions/75913434/how-to-inject-a-repo-or-service-in-a-middleware-in-a-clean-way
+func DeviceAccessMiddleware(deviceShareService *service.DeviceShareService, requiedPermission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")
 		userUUID, exists := c.Get("user_uuid")

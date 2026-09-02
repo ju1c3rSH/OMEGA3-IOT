@@ -58,11 +58,11 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	protected := v1.Group("/")
 	protected.Use(jwtAuth.JwtAuthMiddleWare())
 	{
-		protected.POST("/devices/:instance_uuid/getHistoryData", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "read"), GetDeviceHistoryHandlerFactory(deviceService))
-		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), SendActionHandlerFactory(mqttService, deviceService))
-		protected.GET("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "read"), GetDeviceActionsHandlerFactory(deviceService))
+		protected.POST("/devices/:instance_uuid/getHistoryData", MiddleWares.DeviceAccessMiddleware(deviceShareService, "read"), GetDeviceHistoryHandlerFactory(deviceService))
+		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(deviceShareService, "write"), SendActionHandlerFactory(mqttService, deviceService))
+		protected.GET("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(deviceShareService, "read"), GetDeviceActionsHandlerFactory(deviceService))
 		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
-		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(*deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
+		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))
 
 		// Device Folder routes (organizational grouping of devices)
 		protected.POST("/devices/folders", deviceFolderHandler.CreateFolder)

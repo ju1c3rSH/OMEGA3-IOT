@@ -298,15 +298,14 @@ func (s *DeviceFolderService) DeleteFolder(folderUUID string, userUUID string) e
 }
 
 func (s *DeviceFolderService) checkDeviceAccessByUUID(instanceUUID, userUUID, requiredPermission string) (bool, error) {
-	devices, err := s.instanceRepo.FindByOwnerUUID(userUUID)
+	// Indexed point lookup replaces FindByOwnerUUID full scan.
+	// See device_share_service.go:CheckDeviceAccess for rationale and index coverage.
+	isOwner, err := s.instanceRepo.ExistsByOwner(userUUID, instanceUUID)
 	if err != nil {
 		return false, err
 	}
-
-	for _, d := range devices {
-		if d.InstanceUUID == instanceUUID {
-			return true, nil
-		}
+	if isOwner {
+		return true, nil
 	}
 
 	share, err := s.deviceShareRepo.FindByInstanceAndSharedWith(instanceUUID, userUUID)

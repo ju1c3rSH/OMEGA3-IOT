@@ -17,6 +17,10 @@ type InstanceRepository interface {
 	UpdateProperties(instanceUUID string, properties model.Properties) error
 	UpdateOnlineStatus(instanceUUID string, online bool, lastSeen int64) error
 	Exists(instanceUUID string) (bool, error)
+	// ExistsByOwner performs indexed point lookup SELECT 1 FROM instances
+	// WHERE instance_uuid=? AND owner_uuid=? LIMIT 1.
+	// It replaces the anti-pattern FindByOwnerUUID(userUUID) + linear scan.
+	ExistsByOwner(ownerUUID, instanceUUID string) (bool, error)
 
 	// Transaction support
 	WithTx(tx *gorm.DB) InstanceRepository
@@ -77,6 +81,32 @@ func (r *gormInstanceRepository) Exists(instanceUUID string) (bool, error) {
 	var count int64
 	err := r.db.Model(&model.Instance{}).Where("instance_uuid = ?", instanceUUID).Count(&count).Error
 	return count > 0, err
+}
+
+func (r *gormInstanceRepository) ExistsByOwner(ownerUUID, instanceUUID string) (bool, error) {
+	// Indexed point lookup — uses uniqueIndex on instance_uuid plus index on owner_uuid.
+	// Avoids the full-scan anti-pattern FindByOwnerUUID(user) then linear scan.
+	// Pitfalls avoided:
+	// - COUNT(*) without LIMIT scans all matches vs Limit 1 stops after first row
+	//   (see https://cdn.jsdelivr.net/npm/miokit@2.0.13/skills/external/golang/gorm/performance.md and https://stackoverflow.com/questions/66392372/select-exists-with-gorm)
+	// - SELECT * for existence fetches Properties JSON; SELECT 1 (or PK) is lighter.
+	// - Raw `SELECT EXISTS(...)` requires hard-coded table name; RowsAffected approach
+	//   keeps table name derived from model via GORM, safe for plugins/prefix.
+	// Query plan: MySQL uses uniqueIndex on instance_uuid to locate 1 row, then
+	// filters owner_uuid equality; composite (owner_uuid,instance_uuid) would be
+	// covering but not required — verification: instances already has index on owner_uuid
+	// and uniqueIndex on instance_uuid, so point lookup is O(log n).
+	// See https://github.com/go-gorm/gorm/discussions/6000 for EXISTS vs Limit 1 discussion.
+	var dummy []model.Instance
+	result := r.db.Model(&model.Instance{}).
+		Select("instance_uuid").
+		Where("instance_uuid = ? AND owner_uuid = ?", instanceUUID, ownerUUID).
+		Limit(1).
+		Find(&dummy)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return len(dummy) > 0, nil
 }
 
 func (r *gormInstanceRepository) UpdateProperties(instanceUUID string, properties model.Properties) error {
