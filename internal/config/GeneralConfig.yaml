@@ -1,5 +1,5 @@
 database:
-  mysqldsn: "OMEGA3:OMEGA#@tcp(lorelei.lat:46578)/OMEGA3?charset=utf8mb4&parseTime=True&loc=Local"
+  mysqldsn: "username:password@tcp(your_host:3306)/your_db?charset=utf8mb4&parseTime=True&loc=Local"
 
 server:
   port: 27015
@@ -8,10 +8,10 @@ server:
   key_file: ""      # 留空则自动生成自签名证书
 
 IoTDB:
-  host: "lorelei.lat"
+  host: "your_iotdb_host"
   port: 6667
-  username: root
-  password: root
+  username: your_username
+  password: your_password
   queryTimeoutMs: 4000
   pool:
     maxConnections: 5
@@ -19,12 +19,11 @@ IoTDB:
     fetchMetadataAuto: false
 
 redis:
-  host: lorelei.lat
-  port: 22251
-  password: ""
+  host: your_redis_host
+  port: 6379
+  password: "your_redis_password"
   db: 0
 
 device_presence:
   offline_timeout_sec: 300    # 设备无消息超过 300 秒判定离线
   check_interval_sec: 60     # 后台扫描间隔 60 秒
-
