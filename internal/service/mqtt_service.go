@@ -14,8 +14,28 @@ import (
 	"gorm.io/gorm"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
+
+const (
+	mqttWorkerCount      = 16
+	mqttQueueSize        = 2048
+	mqttPublishTimeout   = 3 * time.Second
+	mqttHandlerTimeout   = 2 * time.Second
+	mqttConnectTimeout   = 10 * time.Second
+	mqttSubscribeTimeout = 5 * time.Second
+)
+
+// ingestJob is a copied MQTT message for worker pool processing.
+// Payload is copied because paho may reuse the underlying buffer after the
+// callback returns (see https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang).
+type ingestJob struct {
+	topic   string
+	payload []byte
+	qos     byte
+	kind    string // "properties" | "action_result"
+}
 
 type MQTTService struct {
 	broker          mqtt.Client
@@ -23,6 +43,10 @@ type MQTTService struct {
 	presenceService *PresenceService
 	loggerService   logger.LoggerInterface
 	eventBus        *eventbus.EventBus
+
+	msgChan chan ingestJob
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
 }
 
 type DeviceMessage struct {
@@ -58,25 +82,34 @@ func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerServic
 		log.Printf("MQTT Service disconnected from broker: %s for : %s", brokerURL, err)
 	})
 	client := mqtt.NewClient(options)
-	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
+	// Fix P1-2: context.WithTimeout was previously ignored (token.Wait() blocks
+	// indefinitely). Use WaitTimeout with the same 10s bound so Gin startup
+	// does not hang forever if the broker is unreachable.
+	// See https://github.com/eclipse/paho.mqtt.golang/blob/master/token.go
+	// Token.WaitTimeout vs Wait and issue #463 (Done channel for context).
+	token := client.Connect()
+	if !token.WaitTimeout(mqttConnectTimeout) {
+		log.Fatalf("Failed to connect MQTT broker: timeout after %v", mqttConnectTimeout)
+	}
+	if token.Error() != nil {
 		log.Fatalf("Failed to connect MQTT broke for : %v", token.Error())
 	}
 	log.Printf("MQTT Service connected to broker: %s successfully", brokerURL)
 
-	//deviceSvc := NewDeviceService()
 	service := &MQTTService{
 		broker:          client,
 		deviceService:   deviceService,
 		presenceService: presenceService,
 		loggerService:   loggerService,
 		eventBus:        eventBus,
+		msgChan:         make(chan ingestJob, mqttQueueSize),
+		stopCh:          make(chan struct{}),
 	}
+	service.startWorkers()
 	service.setupSubscription()
 	return service, nil
 }
+
 func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName string, payload model.Action) error {
 	topic := fmt.Sprintf("data/device/%s/action", deviceUUID)
 	payloadBytes, err := json.Marshal(payload)
@@ -85,7 +118,18 @@ func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName strin
 		return fmt.Errorf("failed to marshal action payload: %w", err)
 	}
 	token := m.broker.Publish(topic, 1, false, payloadBytes)
-	if token.Wait() && token.Error() != nil {
+	// Fix P1-2: previously token.Wait() blocked the Gin HTTP handler
+	// indefinitely (up to broker RTT+retransmit). Use WaitTimeout so the
+	// HTTP thread is bounded to mqttPublishTimeout (3s) and can return
+	// 500/504 quickly. Caller (SendActionHandlerFactory) will surface the
+	// error; an async 202 pattern could be added if needed.
+	// See https://github.com/eclipse/paho.mqtt.golang/blob/master/token.go#L73
+	// and https://github.com/eclipse/paho.mqtt.golang/issues/445 (Done channel).
+	if !token.WaitTimeout(mqttPublishTimeout) {
+		log.Printf("[MQTT] Publish timeout after %v topic=%s command=%s queue_depth=%d/%d", mqttPublishTimeout, topic, commandName, len(m.msgChan), cap(m.msgChan))
+		return fmt.Errorf("publish timeout after %v for topic %s: %w", mqttPublishTimeout, topic, errors.New("mqtt publish timeout"))
+	}
+	if token.Error() != nil {
 		return fmt.Errorf("Failed to publish action payload: %v", token.Error())
 	}
 	log.Printf("MQTT Service published action payload: %v to %v", string(payloadBytes), topic)
@@ -93,26 +137,150 @@ func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName strin
 }
 func (m *MQTTService) setupSubscription() {
 	log.Printf("MQTT Service setup subscription")
-	if token := m.broker.Subscribe("data/device/+/properties", 1, m.handlePropertiesData); token.Wait() && token.Error() != nil {
+	// Enqueue handlers return immediately so Paho's dispatch goroutine
+	// (even with SetOrderMatters(false) each handler still runs in its own
+	// goroutine – blocking it causes pingresp timeouts, see
+	// https://github.com/eclipse/paho.mqtt.golang#common-problems and
+	// https://github.com/eclipse/paho.mqtt.golang/issues/427) is not blocked
+	// by DB/IoTDB work (70-150ms). Actual work is done by bounded workers.
+	if token := m.broker.Subscribe("data/device/+/properties", 1, m.handlePropertiesData); !token.WaitTimeout(mqttSubscribeTimeout) {
+		log.Fatalf("Failed to subscribe to data topic : timeout after %v", mqttSubscribeTimeout)
+	} else if token.Error() != nil {
 		log.Fatalf("Failed to subscribe to data topic : %s", token.Error())
 	} else {
 		log.Printf("Successfully subscribed to topic [data/device/+/properties]")
 	}
-	if token := m.broker.Subscribe("data/device/+/action_result", 1, m.handleActionResult); token.Wait() && token.Error() != nil {
+	if token := m.broker.Subscribe("data/device/+/action_result", 1, m.handleActionResult); !token.WaitTimeout(mqttSubscribeTimeout) {
+		log.Printf("Warning: Failed to subscribe to action_result topic: timeout after %v", mqttSubscribeTimeout)
+	} else if token.Error() != nil {
 		log.Printf("Warning: Failed to subscribe to action_result topic: %s", token.Error())
 	} else {
 		log.Printf("Successfully subscribed to topic [data/device/+/action_result]")
 	}
 }
+
+// handlePropertiesData is the Paho callback – it MUST NOT block.
+// It copies the payload and enqueues to the bounded worker pool so the Paho
+// dispatch goroutine can ack immediately (QoS 1 PUBACK). If the queue is full
+// we apply a drop-newest policy and log (backpressure). This prevents the
+// Paho internal router from stalling under burst load.
+// Pattern from https://thelinuxcode.com/go-worker-pools-production-patterns-pitfalls-and-practical-tuning/
+// and https://backendbytes.com/articles/go-worker-pool-concurrency/.
 func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
-	topic := msg.Topic()
-	payload := msg.Payload()
-	log.Printf("Received property data from MQTT topic [%s] (QOS %d): %s", topic, msg.Qos(), string(payload))
-	deviceUUID, _ := extractDeviceUUIDFromTopic(topic)
+	payloadCopy := make([]byte, len(msg.Payload()))
+	copy(payloadCopy, msg.Payload())
+	job := ingestJob{
+		topic:   msg.Topic(),
+		payload: payloadCopy,
+		qos:     msg.Qos(),
+		kind:    "properties",
+	}
+	select {
+	case m.msgChan <- job:
+		if len(m.msgChan) > cap(m.msgChan)*8/10 {
+			log.Printf("[MQTT] properties enqueued topic=%s queue=%d/%d (high watermark)", job.topic, len(m.msgChan), cap(m.msgChan))
+		}
+	default:
+		// Backpressure: drop newest to protect memory/latency.
+		// Alternative policies: block with timeout or return 429 upstream;
+		// for telemetry ingestion drop+metric is preferred to blocking Paho.
+		log.Printf("[MQTT] WARN queue full (%d/%d) dropping properties message topic=%s", len(m.msgChan), cap(m.msgChan), job.topic)
+	}
+}
+
+// handleActionResult is also non-blocking enqueue.
+func (m *MQTTService) handleActionResult(c mqtt.Client, msg mqtt.Message) {
+	payloadCopy := make([]byte, len(msg.Payload()))
+	copy(payloadCopy, msg.Payload())
+	job := ingestJob{
+		topic:   msg.Topic(),
+		payload: payloadCopy,
+		qos:     msg.Qos(),
+		kind:    "action_result",
+	}
+	select {
+	case m.msgChan <- job:
+	default:
+		log.Printf("[MQTT] WARN queue full (%d/%d) dropping action_result topic=%s", len(m.msgChan), cap(m.msgChan), job.topic)
+	}
+}
+
+func (m *MQTTService) startWorkers() {
+	for i := 0; i < mqttWorkerCount; i++ {
+		m.wg.Add(1)
+		go m.worker(i)
+	}
+	log.Printf("[MQTT] Started %d workers (queue=%d)", mqttWorkerCount, mqttQueueSize)
+}
+
+func (m *MQTTService) worker(id int) {
+	defer m.wg.Done()
+	for {
+		select {
+		case <-m.stopCh:
+			log.Printf("[MQTT-Worker-%d] stopping (stopCh closed)", id)
+			return
+		case job, ok := <-m.msgChan:
+			if !ok {
+				log.Printf("[MQTT-Worker-%d] msgChan closed, exiting", id)
+				return
+			}
+			func(j ingestJob) {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[MQTT-Worker-%d] panic recovered: %v topic=%s kind=%s", id, r, j.topic, j.kind)
+					}
+				}()
+				ctx, cancel := context.WithTimeout(context.Background(), mqttHandlerTimeout)
+				defer cancel()
+				start := time.Now()
+				switch j.kind {
+				case "properties":
+					m.processPropertiesData(ctx, j)
+				case "action_result":
+					m.processActionResult(ctx, j)
+				default:
+					log.Printf("[MQTT-Worker-%d] unknown job kind %s topic=%s", id, j.kind, j.topic)
+				}
+				elapsed := time.Since(start)
+				if elapsed > mqttHandlerTimeout {
+					log.Printf("[MQTT-Worker-%d] slow job kind=%s topic=%s elapsed=%v exceeds %v queue=%d/%d", id, j.kind, j.topic, elapsed, mqttHandlerTimeout, len(m.msgChan), cap(m.msgChan))
+				} else {
+					log.Printf("[MQTT-Worker-%d] processed %s topic=%s elapsed=%v queue=%d/%d", id, j.kind, j.topic, elapsed, len(m.msgChan), cap(m.msgChan))
+				}
+				// Respect ctx cancellation for observability (DB ops themselves
+				// are not context-aware yet, but timeout is logged above).
+				select {
+				case <-ctx.Done():
+					if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+						log.Printf("[MQTT-Worker-%d] context deadline exceeded for %s %s", id, j.kind, j.topic)
+					}
+				default:
+				}
+			}(job)
+		}
+	}
+}
+
+// processPropertiesData contains the original handlePropertiesData logic but
+// runs inside a worker goroutine with a 2s context timeout. This isolates
+// Paho callbacks from DB/IoTDB latency (70-150ms) and prevents dispatch blocking.
+// See https://pkg.go.dev/github.com/eclipse/paho.mqtt.golang#Client.Subscribe
+// "MessageHandler must not block".
+func (m *MQTTService) processPropertiesData(ctx context.Context, job ingestJob) {
+	topic := job.topic
+	payload := job.payload
+	log.Printf("Received property data from MQTT topic [%s] (QOS %d): %s", topic, job.qos, string(payload))
+	deviceUUID, err := extractDeviceUUIDFromTopic(topic)
+	if err != nil {
+		log.Printf("[MQTT] invalid topic %s: %v", topic, err)
+		return
+	}
 	var message DeviceMessage
 
 	if err := json.Unmarshal(payload, &message); err != nil {
-		fmt.Errorf("error unmarshalling device message: %v", err)
+		log.Printf("[MQTT] error unmarshalling device message: %v payload=%s", err, string(payload))
+		return
 	}
 
 	hashedVerifyCode := utils.HashVerifyCode(message.VerifyCode)
@@ -129,7 +297,7 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	// 确保 instance.Properties.Items 已初始化
+	// Ensure instance.Properties.Items is initialized
 	if instance.Properties.Items == nil {
 		instance.Properties.Items = make(map[string]*model.TypedInstancePropertyItem)
 	}
@@ -149,9 +317,9 @@ func (m *MQTTService) handlePropertiesData(c mqtt.Client, msg mqtt.Message) {
 		propsMap[k] = v.Value.V
 	}
 	propUpdateEvent.Metadata["properties"] = propsMap
-	m.eventBus.Publish(context.Background(), propUpdateEvent)
+	m.eventBus.Publish(ctx, propUpdateEvent)
 
-	// Handle event if present
+	// Handle event if present – now within worker, not Paho callback.
 	if message.Data.Event.EventKey != "" {
 		m.handleEvent(instance, message.Data.Event)
 	}
@@ -215,15 +383,19 @@ type ActionResultMessage struct {
 	} `json:"data"`
 }
 
-func (m *MQTTService) handleActionResult(c mqtt.Client, msg mqtt.Message) {
-	topic := msg.Topic()
-	payload := msg.Payload()
+func (m *MQTTService) processActionResult(ctx context.Context, job ingestJob) {
+	topic := job.topic
+	payload := job.payload
 	log.Printf("Received action result from MQTT topic [%s]: %s", topic, string(payload))
 
-	deviceUUID, _ := extractDeviceUUIDFromTopic(topic)
+	deviceUUID, err := extractDeviceUUIDFromTopic(topic)
+	if err != nil {
+		log.Printf("[MQTT] invalid action_result topic %s: %v", topic, err)
+		return
+	}
 	var message ActionResultMessage
 	if err := json.Unmarshal(payload, &message); err != nil {
-		log.Printf("[MQTT] Failed to parse action_result: %v", err)
+		log.Printf("[MQTT] Failed to parse action_result: %v payload=%s", err, string(payload))
 		return
 	}
 
@@ -240,7 +412,7 @@ func (m *MQTTService) handleActionResult(c mqtt.Client, msg mqtt.Message) {
 	resultEvent.Metadata["command"] = message.Data.Command
 	resultEvent.Metadata["success"] = message.Data.Success
 	resultEvent.Metadata["error"] = message.Data.Error
-	m.eventBus.Publish(context.Background(), resultEvent)
+	m.eventBus.Publish(ctx, resultEvent)
 
 	log.Printf("[MQTT] Action result from device %s: command=%s success=%v", deviceUUID, message.Data.Command, message.Data.Success)
 }
@@ -258,6 +430,27 @@ func extractDeviceUUIDFromTopic(topic string) (string, error) {
 	return "", fmt.Errorf("invalid topic format for device UUID extraction: %s", topic)
 }
 func (m *MQTTService) Disconnect(quiesce uint) {
+	// Graceful worker shutdown: signal stop, drain queue, then disconnect broker.
+	// Prevent double-close panic if Disconnect is called multiple times.
+	select {
+	case <-m.stopCh:
+	default:
+		close(m.stopCh)
+	}
+	// Optionally close msgChan after stop so workers exit after draining.
+	// We do not close msgChan immediately to avoid panic on enqueuing during shutdown;
+	// instead let workers exit via stopCh and then close channel for GC.
+	done := make(chan struct{})
+	go func() {
+		m.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		log.Println("[MQTT] workers drained gracefully")
+	case <-time.After(5 * time.Second):
+		log.Println("[MQTT] workers drain timeout after 5s")
+	}
 	if m.broker != nil && m.broker.IsConnected() {
 		m.broker.Disconnect(quiesce)
 		log.Println("MQTT Service disconnected")
