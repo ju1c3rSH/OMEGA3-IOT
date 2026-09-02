@@ -81,76 +81,114 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 }
 
 func (s *DeviceService) GetDeviceHistoryData(instanceUUID string, startTimestamp int64, endTimestamp int64, limit int, offset int, properties []string) (*[]model.DeviceHistoryData, error) {
-	session, err := s.iotDBClient.SessionPool.GetSession()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
+	// Defensive clamp: handler already validates max 5000 via binding, but service/repo
+	// must also enforce to avoid OOM full scans (IOTDB-749 Avoid select * from root OOM).
+	if limit <= 0 {
+		limit = 1000
 	}
-	defer s.iotDBClient.SessionPool.PutBack(session)
+	if limit > 5000 {
+		limit = 5000
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > 10000 {
+		offset = 10000
+	}
 
 	instance, err := s.GetDeviceByInstanceUUID(instanceUUID)
 	if err != nil {
 		return nil, err
 	}
 
-	telemetry, err := s.iotDBRepo.QueryTelemetry(instanceUUID, startTimestamp, endTimestamp)
+	// Sanitize properties: intersect with known instance properties to avoid querying
+	// non-existent columns; keep "*" / empty as-is for SELECT * handling in repo.
+	var filteredProps []string
+	if len(properties) > 0 {
+		hasStar := false
+		for _, p := range properties {
+			if p == "*" {
+				hasStar = true
+				break
+			}
+		}
+		if hasStar {
+			filteredProps = properties
+		} else {
+			seen := make(map[string]bool, len(properties))
+			for _, p := range properties {
+				if p == "" || seen[p] {
+					continue
+				}
+				// Only keep properties that exist on this instance/type to avoid
+				// useless I/O and to allow server-side projection pushdown.
+				if _, ok := instance.Properties.Items[p]; !ok {
+					continue
+				}
+				seen[p] = true
+				filteredProps = append(filteredProps, p)
+			}
+			// If none of the requested props exist, fall back to empty (SELECT *)
+			// so IoTDB returns existing columns and caller can see available keys.
+			if len(filteredProps) == 0 {
+				filteredProps = nil
+			}
+		}
+	}
+
+	telemetryList, err := s.iotDBRepo.QueryTelemetry(instanceUUID, startTimestamp, endTimestamp, limit, offset, filteredProps)
 	if err != nil {
 		return nil, err
 	}
 
-	var historyData []model.DeviceHistoryData
-
-	for i := 0; i < len(telemetry.Values); i++ {
-		measurement := telemetry.Measurements[i]
-
-		value, ok := telemetry.Values[measurement]
-		if !ok {
-			value = "unknown value"
+	// Fast lookup for requested property filtering per row
+	requestedSet := make(map[string]bool, len(filteredProps))
+	for _, p := range filteredProps {
+		if p != "*" {
+			requestedSet[p] = true
 		}
+	}
+	hasFilter := len(requestedSet) > 0
 
-		valStr := ""
-		if value != nil {
-			valStr = fmt.Sprintf("%v", value)
-		}
-
-		var properties model.Properties
-		properties.Items = make(map[string]*model.TypedInstancePropertyItem)
-
-		instanceProp, propExists := instance.Properties.Items[measurement]
-		if !propExists {
-			availableKeys := make([]string, 0, len(instance.Properties.Items))
-			for k := range instance.Properties.Items {
-				availableKeys = append(availableKeys, k)
+	historyData := make([]model.DeviceHistoryData, 0, len(telemetryList))
+	for _, tel := range telemetryList {
+		props := model.Properties{Items: make(map[string]*model.TypedInstancePropertyItem)}
+		for meas, val := range tel.Values {
+			if hasFilter && !requestedSet[meas] {
+				continue
 			}
-			log.Printf("[DEBUG] getHistoryData - device: %s, missing measurement: '%s', value from IoTDB: '%v', available properties: %v",
-				instanceUUID, measurement, value, availableKeys)
-			continue
-		}
-
-		// 如果 IoTDB 返回的值为空，使用设备当前存储的值
-		if valStr == "" {
-			propCopy := *instanceProp
-			properties.Items[measurement] = &propCopy
-		} else {
+			instanceProp, ok := instance.Properties.Items[meas]
+			if !ok {
+				// Column exists in IoTDB but not in current instance definition – skip
+				continue
+			}
+			valStr := ""
+			if val != nil {
+				valStr = fmt.Sprintf("%v", val)
+			}
+			if valStr == "" {
+				propCopy := *instanceProp
+				props.Items[meas] = &propCopy
+				continue
+			}
 			it, convertErr := model.NewTypedValueFromOld(valStr, instanceProp.Meta.Format)
 			if it == nil {
 				log.Printf("[DEBUG] getHistoryData TypedValue is nil - device: %s, measurement: '%s', valStr: '%s', format: '%s', convertErr: %v",
-					instanceUUID, measurement, valStr, instanceProp.Meta.Format, convertErr)
-				// 转换失败时也使用设备当前存储的值
+					instanceUUID, meas, valStr, instanceProp.Meta.Format, convertErr)
 				propCopy := *instanceProp
-				properties.Items[measurement] = &propCopy
+				props.Items[meas] = &propCopy
 				continue
 			}
 			propCopy := *instanceProp
 			propCopy.Value = *it
-			properties.Items[measurement] = &propCopy
+			props.Items[meas] = &propCopy
 		}
-
-		historyItem := model.DeviceHistoryData{
-			Timestamp:  telemetry.Timestamp,
-			Properties: properties,
-		}
-
-		historyData = append(historyData, historyItem)
+		// Even if props is empty (all values filtered/nil) still preserve timestamp row
+		// so pagination is consistent with IoTDB LIMIT/OFFSET.
+		historyData = append(historyData, model.DeviceHistoryData{
+			Timestamp:  tel.Timestamp,
+			Properties: props,
+		})
 	}
 
 	return &historyData, nil

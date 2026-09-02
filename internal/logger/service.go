@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/apache/iotdb-client-go/client"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -206,35 +207,41 @@ func (ls *LoggerService) QueryDeviceLogs(query DeviceLogQuery) (*LogQueryRespons
 // QueryUserLogs queries user logs from IoTDB
 func (ls *LoggerService) QueryUserLogs(query UserLogQuery) (*LogQueryResponse, error) {
 	userPath := "root.mm1.user_data.log"
-	response, err := ls.queryLogs(userPath, query.LogQuery)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter by user_uuid if specified
 	if query.UserUUID != "" {
-		var filtered []LogEntry
-		for _, entry := range response.Entries {
-			if entry.Metadata != nil && entry.Metadata["user_uuid"] == query.UserUUID {
-				filtered = append(filtered, entry)
-			}
-		}
-		response.Entries = filtered
-		response.Total = len(filtered)
+		// Push user_uuid predicate into SQL WHERE so IoTDB can use server-side
+		// filtering and LIMIT/OFFSET pushdown instead of fetching all rows and
+		// filtering in Go (which defeats pagination and risks OOM on large tables).
+		// See IoTDB pagination docs https://iotdb.apache.org/UserGuide/V0.13.x/Query-Data/Pagination.html
+		// WHERE time > ... AND user_uuid = '...' LIMIT ... OFFSET ...
+		return ls.queryLogsWithFilter(userPath, query.LogQuery, "user_uuid", query.UserUUID)
 	}
-
-	return response, nil
+	return ls.queryLogs(userPath, query.LogQuery)
 }
 
 // queryLogs is the internal implementation for querying logs
 func (ls *LoggerService) queryLogs(path string, query LogQuery) (*LogQueryResponse, error) {
+	// Defensive clamp: without LIMIT IoTDB will scan full partition and OOM
+	// (see IOTDB-749). Handler may not clamp, so enforce here.
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 5000 {
+		query.Limit = 5000
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+	if query.Offset > 10000 {
+		query.Offset = 10000
+	}
 	session, err := ls.iotdbClient.SessionPool.GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
 	defer ls.iotdbClient.SessionPool.PutBack(session)
 
-	// Build SQL query
+	// Build SQL query - time is stored as ms (UnixMilli) so convert seconds -> ms.
+	// Using numeric time range allows IoTDB partition pruning / pushdown.
 	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d",
 		path,
 		query.StartTime*1000, // Convert to milliseconds
@@ -269,13 +276,23 @@ func (ls *LoggerService) queryLogs(path string, query LogQuery) (*LogQueryRespon
 			Metadata:  make(map[string]interface{}),
 		}
 
-		// Parse columns
+		// Parse columns - handle both short names and fully qualified IoTDB paths
+		// e.g. root.mm1.user_data.log.level -> level
 		columnCount := dataSet.GetColumnCount()
 		for i := 0; i < columnCount; i++ {
 			columnName := dataSet.GetColumnName(i)
 			value := dataSet.GetValue(columnName)
+			// Extract short name for switch matching
+			shortName := columnName
+			if idx := strings.LastIndex(columnName, "."); idx >= 0 {
+				shortName = columnName[idx+1:]
+			}
+			// Skip Time/Device columns which are not log fields
+			if strings.EqualFold(shortName, "Time") || strings.EqualFold(shortName, "Device") {
+				continue
+			}
 
-			switch columnName {
+			switch shortName {
 			case "level":
 				if v, ok := value.(string); ok {
 					entry.Level = LogLevel(v)
@@ -292,19 +309,163 @@ func (ls *LoggerService) queryLogs(path string, query LogQuery) (*LogQueryRespon
 				if v, ok := value.(string); ok {
 					var metadata map[string]interface{}
 					json.Unmarshal([]byte(v), &metadata)
-					entry.Metadata = metadata
+					if metadata != nil {
+						if entry.Metadata == nil {
+							entry.Metadata = metadata
+						} else {
+							for k, mv := range metadata {
+								entry.Metadata[k] = mv
+							}
+						}
+					}
 				}
+			case "user_uuid", "ip_address", "user_agent":
+				// Known user log columns – keep in Metadata for backward compat
+				// but also preserve original short name.
+				if entry.Metadata == nil {
+					entry.Metadata = make(map[string]interface{})
+				}
+				entry.Metadata[shortName] = value
 			default:
 				if entry.Metadata == nil {
 					entry.Metadata = make(map[string]interface{})
 				}
-				entry.Metadata[columnName] = value
+				entry.Metadata[shortName] = value
 			}
 		}
 
 		entries = append(entries, entry)
 	}
 
+	return &LogQueryResponse{
+		Total:   len(entries),
+		Entries: entries,
+	}, nil
+}
+
+// queryLogsWithFilter builds a filtered SQL query for user_uuid pushdown.
+// It escapes the filter value to prevent injection and applies same clamp/limit logic.
+// See GORM/SQL best practice: avoid SELECT * without WHERE/LIMIT (https://gorm.io/docs/performance.html)
+// and push predicates to DB rather than in-memory filtering.
+func (ls *LoggerService) queryLogsWithFilter(path string, query LogQuery, filterColumn, filterValue string) (*LogQueryResponse, error) {
+	if query.Limit <= 0 {
+		query.Limit = 100
+	}
+	if query.Limit > 5000 {
+		query.Limit = 5000
+	}
+	if query.Offset < 0 {
+		query.Offset = 0
+	}
+	if query.Offset > 10000 {
+		query.Offset = 10000
+	}
+	// Escape single quotes for IoTDB SQL string literal
+	escaped := strings.ReplaceAll(filterValue, "'", "''")
+	// Validate column name is a safe identifier (prevent injection)
+	validCol := true
+	for idx, c := range filterColumn {
+		if idx == 0 {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+				validCol = false
+				break
+			}
+		} else {
+			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+				validCol = false
+				break
+			}
+		}
+	}
+	if !validCol {
+		return nil, fmt.Errorf("invalid filter column: %s", filterColumn)
+	}
+	session, err := ls.iotdbClient.SessionPool.GetSession()
+	if err != nil {
+		return nil, fmt.Errorf("[LoggerService] failed to get session: %w", err)
+	}
+	defer ls.iotdbClient.SessionPool.PutBack(session)
+
+	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %d AND time <= %d AND %s = '%s' ORDER BY time DESC LIMIT %d OFFSET %d",
+		path,
+		query.StartTime*1000,
+		query.EndTime*1000,
+		filterColumn,
+		escaped,
+		query.Limit,
+		query.Offset)
+
+	dataSet, err := session.ExecuteQueryStatement(sql, &ls.iotdbClient.Config.IoTDB.QueryTimeoutMs)
+	if err != nil {
+		return nil, fmt.Errorf("[LoggerService] failed to execute query: %w", err)
+	}
+	defer dataSet.Close()
+
+	var entries []LogEntry
+	for {
+		hasNext, err := dataSet.Next()
+		if err != nil {
+			return nil, fmt.Errorf("[LoggerService] failed to iterate result: %w", err)
+		}
+		if !hasNext {
+			break
+		}
+		record, err := dataSet.GetRowRecord()
+		if err != nil {
+			return nil, fmt.Errorf("[LoggerService] failed to get row record: %w", err)
+		}
+		timestamp := record.GetTimestamp() / 1000
+		entry := LogEntry{
+			Timestamp: timestamp,
+			Metadata:  make(map[string]interface{}),
+		}
+		columnCount := dataSet.GetColumnCount()
+		for i := 0; i < columnCount; i++ {
+			columnName := dataSet.GetColumnName(i)
+			value := dataSet.GetValue(columnName)
+			shortName := columnName
+			if idx := strings.LastIndex(columnName, "."); idx >= 0 {
+				shortName = columnName[idx+1:]
+			}
+			if strings.EqualFold(shortName, "Time") || strings.EqualFold(shortName, "Device") {
+				continue
+			}
+			switch shortName {
+			case "level":
+				if v, ok := value.(string); ok {
+					entry.Level = LogLevel(v)
+				}
+			case "message":
+				if v, ok := value.(string); ok {
+					entry.Message = v
+				}
+			case "event_type":
+				if v, ok := value.(string); ok {
+					entry.EventType = LogEventType(v)
+				}
+			case "metadata":
+				if v, ok := value.(string); ok {
+					var metadata map[string]interface{}
+					json.Unmarshal([]byte(v), &metadata)
+					if metadata != nil {
+						if entry.Metadata == nil {
+							entry.Metadata = metadata
+						} else {
+							for k, mv := range metadata {
+								entry.Metadata[k] = mv
+							}
+						}
+					}
+				}
+			default:
+				if entry.Metadata == nil {
+					entry.Metadata = make(map[string]interface{})
+				}
+				entry.Metadata[shortName] = value
+			}
+		}
+		entries = append(entries, entry)
+	}
 	return &LogQueryResponse{
 		Total:   len(entries),
 		Entries: entries,
