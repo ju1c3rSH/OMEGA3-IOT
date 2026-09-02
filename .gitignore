@@ -1,10 +1,14 @@
 # .gitignore
 
-# Ignore the main configuration file
-#GeneralConfig.yaml
+# GeneralConfig.yaml is TRACKED with placeholder values (DO NOT commit real credentials!)
+# Real credentials must be provided via CLI flags / env vars or a local untracked file:
+# e.g. copy GeneralConfig_example.yaml to GeneralConfig.local.yaml (ignored below)
+*_local.yaml
+*.private.bak
+*.local.bak
 
 # Optionally, ignore any file ending with _config.yaml
-*_config.yaml
+# *_config.yaml  # disabled - too broad, would ignore example
 
 # Or ignore a whole config directory
 # config/
