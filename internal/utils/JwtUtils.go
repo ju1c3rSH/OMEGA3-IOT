@@ -19,17 +19,32 @@ var jwtSecret string
 func init() {
 	jwtSecret = os.Getenv(JWTSecretEnvKey)
 	if jwtSecret == "" {
-		log.Fatalf("FATAL: %s environment variable is not set. JWT signing requires a secret.", JWTSecretEnvKey)
+		log.Printf("WARNING: %s not set, JWT operations will fail until it is configured (lazy init)", JWTSecretEnvKey)
+		return
 	}
 	if len(jwtSecret) < 32 {
 		log.Printf("WARNING: %s is shorter than 32 characters. Consider using a longer secret for better security.", JWTSecretEnvKey)
 	}
 }
 
+func ensureJWTSecret() error {
+	if jwtSecret == "" {
+		env := os.Getenv(JWTSecretEnvKey)
+		if env == "" {
+			return fmt.Errorf("%s not set", JWTSecretEnvKey)
+		}
+		jwtSecret = env
+		if len(jwtSecret) < 32 {
+			log.Printf("WARNING: %s is shorter than 32 characters. Consider using a longer secret for better security.", JWTSecretEnvKey)
+		}
+	}
+	return nil
+}
+
 // GetJWTSecret returns the JWT secret (for testing purposes only)
 func GetJWTSecret() string {
-	if jwtSecret == "" {
-		panic(fmt.Sprintf("%s not initialized", JWTSecretEnvKey))
+	if err := ensureJWTSecret(); err != nil {
+		panic(fmt.Sprintf("%s not initialized: %v", JWTSecretEnvKey, err))
 	}
 	return jwtSecret
 }
@@ -43,6 +58,9 @@ type UserClaims struct {
 }
 
 func GenerateToken(username string, userUUID string, role int, jti string) (string, error) {
+	if err := ensureJWTSecret(); err != nil {
+		return "", err
+	}
 	expirationTime := time.Now().Add(TokenTTL).Unix()
 	claims := UserClaims{
 		JTI:      jti,
@@ -67,6 +85,9 @@ func GenerateToken(username string, userUUID string, role int, jti string) (stri
 // All with bearer
 
 func ParseToken(tokenString string) (*UserClaims, error) {
+	if err := ensureJWTSecret(); err != nil {
+		return nil, err
+	}
 	claims := &UserClaims{}
 	if strings.HasPrefix(tokenString, "Bearer ") {
 		tokenString = tokenString[7:]
