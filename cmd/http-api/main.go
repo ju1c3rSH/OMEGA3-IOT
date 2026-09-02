@@ -42,16 +42,22 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 	}
 
 	r := gin.New()
+	if err := r.SetTrustedProxies([]string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.1/32"}); err != nil {
+		log.Printf("[WARN] failed to set trusted proxies: %v", err)
+	}
+	r.ForwardedByClientIP = true
 	r.Use(gin.Recovery())
 	// 异步采样日志：health 按 IP 1/min，其它全量，缓冲 4096 满丢弃
 	sampledLogger := MiddleWares.NewSampledLogger()
 	r.Use(sampledLogger.Middleware())
 
-	// 正确配置 CORS（生产环境应限制 AllowOrigins）
+	// 单一全局 CORS（已移除 http_api_routes.go 自定义 Cors，避免双头/双 abort）
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{"*"}, // 开发环境可用，生产环境替换为具体域名
-		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders: []string{"Origin", "Content-Type", "Authorization"},
+		AllowOrigins:  []string{"*"}, // 开发环境可用，生产环境替换为具体域名
+		AllowMethods:  []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:  []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders: []string{"Content-Length"},
+		MaxAge:        12 * time.Hour,
 	}))
 
 	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceFolderHandler, mqttService, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService)

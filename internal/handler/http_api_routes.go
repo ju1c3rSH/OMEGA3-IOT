@@ -13,23 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Cors() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Accept, Authorization")
-		c.Header("Access-Control-Expose-Headers", "Content-Length, Content-Type, Access-Control-Allow-Origin")
-		c.Header("Access-Control-Max-Age", "86400")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	}
-}
-
 func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, publicInstanceService *service.PublicInstanceService) {
 	// Avatar files: use versioned URLs (?t=updatedAt), so each version
 	// is immutable. Aggressive caching is safe — new uploads get new timestamps.
@@ -42,7 +25,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
 
-	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60*time.Second).RateLimitMiddleware())
+	v1 := router.Group("/api/v1", MiddleWares.NewRateLimiter(15, 60*time.Second).RateLimitMiddleware())
 
 	v1.GET("/test", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
