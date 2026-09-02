@@ -5,11 +5,14 @@ import (
 	"OMEGA3-IOT/internal/model"
 	"context"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/apache/iotdb-client-go/client"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"log"
+	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
@@ -20,10 +23,25 @@ func InitDB(config config.Config) {
 
 	var err error
 
-	DB, err = gorm.Open(mysql.Open(MYSQLdsn), &gorm.Config{})
+	DB, err = gorm.Open(mysql.Open(MYSQLdsn), &gorm.Config{
+		PrepareStmt:            true,
+		SkipDefaultTransaction: true,
+		Logger:                 logger.Default.LogMode(logger.Warn),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Fatalf("failed to get sql.DB from gorm DB: %v", err)
+	}
+	// Tuned pool: 25 open keeps below MySQL max_connections 151 (even with multiple replicas),
+	// 10 idle keeps warm connections for bursty IoT writes.
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetConnMaxLifetime(10 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 
 	if err := DB.AutoMigrate(
 		&model.User{},
@@ -47,9 +65,17 @@ func InitDB(config config.Config) {
 
 func InitRedis(cfg config.Config) {
 	RedisClient = redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
+		Addr:            fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+		Password:        cfg.Redis.Password,
+		DB:              cfg.Redis.DB,
+		PoolSize:        50,
+		MinIdleConns:    10,
+		DialTimeout:     500 * time.Millisecond,
+		ReadTimeout:     3 * time.Second,
+		WriteTimeout:    3 * time.Second,
+		PoolTimeout:     4 * time.Second,
+		ConnMaxIdleTime: 5 * time.Minute,
+		ConnMaxLifetime: 30 * time.Minute,
 	})
 	if err := RedisClient.Ping(context.Background()).Err(); err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)

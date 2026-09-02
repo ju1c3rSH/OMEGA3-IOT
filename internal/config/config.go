@@ -262,10 +262,11 @@ func defineFlags() {
 	pflag.String("iotdb.password", "root", "IoTDB Password (Required)")
 	pflag.Int64("iotdb.querytimeoutms", 30000, "IoTDB query timeout (Required)")
 
-	// IoTDB连接池配置
-	pflag.Int("iotdb.pool.maxconnections", 10, "IoTDB 连接池最大连接数")
-	pflag.Int64("iotdb.pool.timeout", 5000, "IoTDB 连接池超时")
-	pflag.Bool("iotdb.pool.fetchmetadataauto", true, "IoTDB 自动获取元数据")
+	// IoTDB连接池配置 — defaults aligned with GeneralConfig.yaml (20/3000/false);
+	// CLI flags take precedence over file via viper.BindPFlags.
+	pflag.Int("iotdb.pool.maxconnections", 20, "IoTDB 连接池最大连接数")
+	pflag.Int64("iotdb.pool.timeout", 3000, "IoTDB 连接池超时")
+	pflag.Bool("iotdb.pool.fetchmetadataauto", false, "IoTDB 自动获取元数据")
 
 	// MQTT Broker配置
 	pflag.String("mqtt.broker.host", "", "MQTT Broker 主机 (必需)")

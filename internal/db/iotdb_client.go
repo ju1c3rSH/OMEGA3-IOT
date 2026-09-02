@@ -23,7 +23,11 @@ func (i *IOTDBClient) Close() {
 }
 
 func (i *IOTDBClient) InsertRecord(deviceId string, measurements []string, dataTypes []client.TSDataType, values []interface{}, timestamp int64) (r *common.TSStatus, err error) {
-	session, _ := i.SessionPool.GetSession()
+	session, err := i.SessionPool.GetSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session from pool: %w", err)
+	}
+	defer i.SessionPool.PutBack(session)
 	return session.InsertRecord(deviceId, measurements, dataTypes, values, timestamp)
 }
 
@@ -102,7 +106,9 @@ func (i *IOTDBClient) InitializeSchema() error {
 	//latestStorageGroup := "root.mm1_latest"
 	//实际上不需要latest，latest在MySQL里
 	//TODO SG要拓展性
-	i.setStorageGroup(storageGroup)
+	if err := i.setStorageGroup(storageGroup); err != nil {
+		return err
+	}
 	//i.setStorageGroup(latestStorageGroup)
 	return nil
 }
@@ -154,17 +160,18 @@ func (i *IOTDBClient) CheckError(status *common.TSStatus, err error) error {
 	return nil
 }
 
-func (i *IOTDBClient) setStorageGroup(storageGroup string) {
+func (i *IOTDBClient) setStorageGroup(storageGroup string) error {
 	session, err := i.SessionPool.GetSession()
 	if err != nil {
-		defer i.SessionPool.PutBack(session)
-		log.Fatal("failed to get session from pool: %w", err)
-
+		log.Printf("failed to get session from pool: %v", err)
+		return fmt.Errorf("failed to get session from pool: %w", err)
 	}
+	defer i.SessionPool.PutBack(session)
 
 	i.StorageGroup = storageGroup
 	status, err := session.SetStorageGroup(storageGroup)
 	if checkErr := i.CheckError(status, err); checkErr != nil {
 		log.Printf("[IOTDB CLIENT] (不需要理睬): %s ", checkErr)
 	}
+	return nil
 }

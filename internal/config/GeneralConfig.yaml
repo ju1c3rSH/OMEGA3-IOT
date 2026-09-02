@@ -14,8 +14,8 @@ IoTDB:
   password: your_password
   queryTimeoutMs: 4000
   pool:
-    maxConnections: 5
-    timeout: 60000
+    maxConnections: 20
+    timeout: 3000
     fetchMetadataAuto: false
 
 redis:
