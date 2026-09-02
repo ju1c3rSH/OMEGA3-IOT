@@ -20,7 +20,13 @@ type RateLimiter struct {
 	window      time.Duration
 }
 
+// NewRateLimiter creates a rate limiter allowing maxRequests per window per IP.
+// window must be a time.Duration (e.g. 60*time.Second); values < time.Second are clamped to 1s
+// to avoid accidental nanosecond windows (e.g. NewRateLimiter(15, 60) == 60ns) and ticker spin.
 func NewRateLimiter(maxRequests int, window time.Duration) *RateLimiter {
+	if window < time.Second {
+		window = time.Second
+	}
 	limiter := &RateLimiter{
 		records:     make(map[string]*IPRequestRecord),
 		maxRequests: maxRequests,
@@ -68,14 +74,27 @@ func (rl *RateLimiter) RateLimitMiddleware() gin.HandlerFunc {
 }
 
 func (rl *RateLimiter) cleanup() {
-	ticker := time.NewTicker(rl.window)
+	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		rl.mutex.Lock()
 		now := time.Now()
+		// Collect expired keys under RLock to avoid holding exclusive lock during full map scan.
+		rl.mutex.RLock()
+		var expired []string
 		for ip, record := range rl.records {
 			if now.Sub(record.LastAccess) > rl.window*2 {
+				expired = append(expired, ip)
+			}
+		}
+		rl.mutex.RUnlock()
+		if len(expired) == 0 {
+			continue
+		}
+		// Batch delete under exclusive Lock; re-check condition to handle races.
+		rl.mutex.Lock()
+		for _, ip := range expired {
+			if rec, ok := rl.records[ip]; ok && now.Sub(rec.LastAccess) > rl.window*2 {
 				delete(rl.records, ip)
 			}
 		}

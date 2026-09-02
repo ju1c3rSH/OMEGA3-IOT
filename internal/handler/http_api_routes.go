@@ -8,6 +8,7 @@ import (
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/types"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -41,7 +42,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	router.StaticFile("/debugger", "./debugger/index.html")
 	router.Static("/debugger/assets", "./debugger/assets")
 
-	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60).RateLimitMiddleware())
+	v1 := router.Group("/api/v1", Cors(), MiddleWares.NewRateLimiter(15, 60*time.Second).RateLimitMiddleware())
 
 	v1.GET("/test", func(c *gin.Context) {
 		msg := c.DefaultQuery("msg", "hello world")
