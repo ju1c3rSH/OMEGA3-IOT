@@ -21,6 +21,7 @@ type Config struct {
 		TLSEnabled bool   `mapstructure:"tls_enabled"`
 		CertFile   string `mapstructure:"cert_file"`
 		KeyFile    string `mapstructure:"key_file"`
+		Debug      bool   `mapstructure:"debug"`
 	} `mapstructure:"server"`
 	MQTT struct {
 		Broker Broker `mapstructure:"broker"`
@@ -78,6 +79,7 @@ type TLS struct {
 	ClientCertFile string `mapstructure:"client_cert_file"`
 	ClientKeyFile  string `mapstructure:"client_key_file"`
 }
+
 var RequiredFlags = []string{
 	"database.mysqldsn",
 	"server.port",
@@ -251,6 +253,7 @@ func defineFlags() {
 	pflag.Bool("server.tls_enabled", false, "Enable HTTPS (optional, auto-generates self-signed cert if cert_file/key_file empty)")
 	pflag.String("server.cert_file", "", "TLS certificate file path (optional, auto-generated if empty)")
 	pflag.String("server.key_file", "", "TLS private key file path (optional, auto-generated if empty)")
+	pflag.Bool("server.debug", false, "Enable debug mode (pprof on 127.0.0.1:6060, verbose logging)")
 
 	// IoTDB配置
 	pflag.String("iotdb.host", "", "IoTDB Host (Required)")

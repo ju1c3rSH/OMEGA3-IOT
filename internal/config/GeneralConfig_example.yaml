@@ -4,6 +4,7 @@ database:
 
 server:
   port: your_port
+  debug: false
 
 IoTDB:
   host: "your_domain"

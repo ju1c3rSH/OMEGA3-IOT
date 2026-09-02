@@ -8,6 +8,11 @@ import (
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/utils"
+	"crypto/tls"
+	"net/http"
+	_ "net/http/pprof"
+	"time"
+
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"log"
@@ -23,7 +28,24 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 
 	log.Println("[HTTP_API] Run function called")
 
-	r := gin.Default()
+	if config.Server.Debug {
+		gin.SetMode(gin.DebugMode)
+		// pprof 仅 debug 暴露于本地回环，避免生产泄漏
+		go func() {
+			log.Println("[HTTP_API] pprof enabled on 127.0.0.1:6060")
+			if err := http.ListenAndServe("127.0.0.1:6060", nil); err != nil {
+				log.Printf("[HTTP_API] pprof server error: %v", err)
+			}
+		}()
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	r := gin.New()
+	r.Use(gin.Recovery())
+	// 异步采样日志：health 按 IP 1/min，其它全量，缓冲 4096 满丢弃
+	sampledLogger := MiddleWares.NewSampledLogger()
+	r.Use(sampledLogger.Middleware())
 
 	// 正确配置 CORS（生产环境应限制 AllowOrigins）
 	r.Use(cors.New(cors.Config{
@@ -36,14 +58,32 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 
 	log.Println("Starting server on :" + config.Server.Port)
 
+	srv := &http.Server{
+		Addr:              ":" + config.Server.Port,
+		Handler:           r,
+		ReadTimeout:       5 * time.Second,
+		ReadHeaderTimeout: 3 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+
 	if config.Server.TLSEnabled {
 		certFile, keyFile, err := utils.EnsureCertificates(config.Server.CertFile, config.Server.KeyFile)
 		if err != nil {
 			log.Fatalf("Failed to prepare TLS certificates: %v", err)
 		}
 		log.Printf("TLS enabled: cert=%s, key=%s", certFile, keyFile)
-		return r.RunTLS(":"+config.Server.Port, certFile, keyFile)
+		srv.TLSConfig = &tls.Config{
+			MinVersion:               tls.VersionTLS12,
+			PreferServerCipherSuites: true,
+			CurvePreferences: []tls.CurveID{
+				tls.X25519,
+				tls.CurveP256,
+			},
+		}
+		return srv.ListenAndServeTLS(certFile, keyFile)
 	}
 
-	return r.Run(":" + config.Server.Port)
+	return srv.ListenAndServe()
 }
