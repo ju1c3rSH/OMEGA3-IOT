@@ -245,7 +245,7 @@ func (m *MQTTService) worker(id int) {
 				elapsed := time.Since(start)
 				if elapsed > mqttHandlerTimeout {
 					log.Printf("[MQTT-Worker-%d] slow job kind=%s topic=%s elapsed=%v exceeds %v queue=%d/%d", id, j.kind, j.topic, elapsed, mqttHandlerTimeout, len(m.msgChan), cap(m.msgChan))
-				} else {
+				} else if elapsed > 100*time.Millisecond {
 					log.Printf("[MQTT-Worker-%d] processed %s topic=%s elapsed=%v queue=%d/%d", id, j.kind, j.topic, elapsed, len(m.msgChan), cap(m.msgChan))
 				}
 				// Respect ctx cancellation for observability (DB ops themselves
@@ -270,7 +270,6 @@ func (m *MQTTService) worker(id int) {
 func (m *MQTTService) processPropertiesData(ctx context.Context, job ingestJob) {
 	topic := job.topic
 	payload := job.payload
-	log.Printf("Received property data from MQTT topic [%s] (QOS %d): %s", topic, job.qos, string(payload))
 	deviceUUID, err := extractDeviceUUIDFromTopic(topic)
 	if err != nil {
 		log.Printf("[MQTT] invalid topic %s: %v", topic, err)
@@ -285,7 +284,6 @@ func (m *MQTTService) processPropertiesData(ctx context.Context, job ingestJob) 
 
 	hashedVerifyCode := utils.HashVerifyCode(message.VerifyCode)
 	rawPropsData := message.Data.Properties
-	fmt.Printf("Properties Object: %+v\n", rawPropsData)
 
 	instance, err := m.deviceService.GetDeviceByUUIDAndVerifyHash(deviceUUID, hashedVerifyCode)
 	if err != nil {

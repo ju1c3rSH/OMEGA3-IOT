@@ -362,8 +362,6 @@ func (s *DeviceService) ProcessDeviceTelemetryFromInstance(instance *model.Insta
 
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
-	log.Printf("[DeviceService] Inserting %d measurements for %s: %v", len(measurements), instance.InstanceUUID, measurements)
-
 	if err := s.iotDBClient.InsertRecordTyped(historicalDevicePath, measurements, dataTypes, values, timestamp); err != nil {
 		return fmt.Errorf("[DeviceService] failed to save telemetry from instance %s to IoTDB: %w", instance.InstanceUUID, err)
 	}

@@ -23,17 +23,62 @@ type DeviceFolderService struct {
 	loggerService   logger.LoggerInterface
 	iotdbClient     *db.IOTDBClient
 	db              *gorm.DB
+	metricCh        chan folderMetric
+}
+
+type folderMetric struct {
+	operationType string
+	userID        int64
 }
 
 // NewDeviceFolderService creates a new DeviceFolderService.
 func NewDeviceFolderService(db *gorm.DB, iotdbClient *db.IOTDBClient, loggerService logger.LoggerInterface) *DeviceFolderService {
-	return &DeviceFolderService{
+	s := &DeviceFolderService{
 		folderRepo:      repository.NewDeviceFolderRepository(db),
 		instanceRepo:    repository.NewInstanceRepository(db),
 		deviceShareRepo: repository.NewDeviceShareRepository(db),
 		loggerService:   loggerService,
 		iotdbClient:     iotdbClient,
 		db:              db,
+	}
+	if iotdbClient != nil {
+		s.metricCh = make(chan folderMetric, 64)
+		go s.consumeMetrics()
+	}
+	return s
+}
+
+func (s *DeviceFolderService) consumeMetrics() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[DeviceFolderService] metric consumer panic recovered: %v", r)
+		}
+	}()
+	for m := range s.metricCh {
+		func(m folderMetric) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[DeviceFolderService] metric write panic recovered: %v", r)
+				}
+			}()
+			path := "root.mm1.metrics.folder_operations"
+			timestamp := time.Now().UnixNano() / int64(time.Millisecond)
+
+			measurements := []string{"operation_type", "user_id", "count"}
+			dataTypes := []client.TSDataType{client.STRING, client.INT64, client.INT64}
+			values := []interface{}{m.operationType, m.userID, int64(1)}
+
+			session, err := s.iotdbClient.SessionPool.GetSession()
+			if err != nil {
+				log.Printf("[DeviceFolderService] Failed to get IoTDB session for metrics: %v", err)
+				return
+			}
+			defer s.iotdbClient.SessionPool.PutBack(session)
+
+			if _, err := session.InsertRecord(path, measurements, dataTypes, values, timestamp); err != nil {
+				log.Printf("[DeviceFolderService] Failed to write metrics to IoTDB: %v", err)
+			}
+		}(m)
 	}
 }
 
@@ -333,23 +378,11 @@ func (s *DeviceFolderService) reportIotdbMetric(operationType string, userID int
 		return
 	}
 
-	path := "root.mm1.metrics.folder_operations"
-	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-
-	measurements := []string{"operation_type", "user_id", "count"}
-	dataTypes := []client.TSDataType{client.STRING, client.INT64, client.INT64}
-	values := []interface{}{operationType, userID, int64(1)}
-
-	session, err := s.iotdbClient.SessionPool.GetSession()
-	if err != nil {
-		log.Printf("[DeviceFolderService] Failed to get IoTDB session for metrics: %v", err)
-		return
-	}
-	defer s.iotdbClient.SessionPool.PutBack(session)
-
-	_, err = session.InsertRecord(path, measurements, dataTypes, values, timestamp)
-	if err != nil {
-		log.Printf("[DeviceFolderService] Failed to write metrics to IoTDB: %v", err)
+	m := folderMetric{operationType: operationType, userID: userID}
+	select {
+	case s.metricCh <- m:
+	default:
+		log.Printf("[DeviceFolderService] metric channel full, dropping %s", m.operationType)
 	}
 }
 
