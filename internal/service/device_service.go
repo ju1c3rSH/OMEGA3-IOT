@@ -65,7 +65,12 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 	instance.UpdatedAt = time.Now()
 	instance.Online = true
 
-	if err := s.instanceRepo.Update(&instance); err != nil {
+	if err := s.instanceRepo.UpdateFields(instance.InstanceUUID, map[string]interface{}{
+		"properties": instance.Properties,
+		"last_seen":  instance.LastSeen,
+		"online":     instance.Online,
+		"updated_at": instance.UpdatedAt,
+	}); err != nil {
 		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
 	}
 

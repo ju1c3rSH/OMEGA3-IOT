@@ -130,11 +130,11 @@ func (ps *PushService) PushToUser(userUUID string, msg *Message) {
 
 // PushToDeviceOwner looks up the device owner and pushes the message.
 func (ps *PushService) PushToDeviceOwner(deviceUUID string, msg *Message) {
-	instance, err := ps.instanceRepo.FindByUUID(deviceUUID)
+	ownerUUID, err := ps.instanceRepo.FindOwnerUUIDByUUID(deviceUUID)
 	if err != nil {
 		return
 	}
-	ps.PushToUser(instance.OwnerUUID, msg)
+	ps.PushToUser(ownerUUID, msg)
 }
 
 // nextSeq returns the next sequence number.
@@ -222,11 +222,11 @@ func (ps *PushService) handleEventPush(ctx context.Context, event logger.DeviceL
 	ps.pendingACKs.Store(msg.Seq, pm)
 
 	// Push to device owner
-	instance, err := ps.instanceRepo.FindByUUID(event.DeviceUUID)
+	ownerUUID, err := ps.instanceRepo.FindOwnerUUIDByUUID(event.DeviceUUID)
 	if err != nil {
 		return nil
 	}
-	ps.PushToUser(instance.OwnerUUID, msg)
+	ps.PushToUser(ownerUUID, msg)
 	return nil
 }
 

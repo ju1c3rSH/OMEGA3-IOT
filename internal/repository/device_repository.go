@@ -10,6 +10,7 @@ type InstanceRepository interface {
 	FindByID(id uint) (*model.Instance, error)
 	FindByUUID(instanceUUID string) (*model.Instance, error)
 	FindByOwnerUUID(ownerUUID string) ([]model.Instance, error)
+	FindOwnerUUIDByUUID(instanceUUID string) (string, error)
 	FindByUUIDs(instanceUUIDs []string) ([]model.Instance, error)
 	Update(instance *model.Instance) error
 	UpdateFields(instanceUUID string, fields map[string]interface{}) error
@@ -54,6 +55,14 @@ func (r *gormInstanceRepository) FindByUUID(instanceUUID string) (*model.Instanc
 	var instance model.Instance
 	err := r.db.Where("instance_uuid = ?", instanceUUID).First(&instance).Error
 	return &instance, err
+}
+
+func (r *gormInstanceRepository) FindOwnerUUIDByUUID(instanceUUID string) (string, error) {
+	var row struct {
+		OwnerUUID string
+	}
+	err := r.db.Select("owner_uuid").Where("instance_uuid = ?", instanceUUID).First(&row).Error
+	return row.OwnerUUID, err
 }
 
 func (r *gormInstanceRepository) FindByOwnerUUID(ownerUUID string) ([]model.Instance, error) {
