@@ -90,6 +90,10 @@ func main() {
 	}
 	defer mqttService.Disconnect(250)
 
+	// Async action dispatch (HTTP 202 hand-off to background MQTT publish)
+	actionDispatcher := service.NewActionDispatcher(mqttService, eventBus)
+	log.Println("[Main] ActionDispatcher created")
+
 	// Create repositories
 	userRepo := repository.NewUserRepository(db.DB)
 	deviceRegistrationRepo := repository.NewDeviceRegistrationRecordRepository(db.DB)
@@ -156,7 +160,7 @@ func main() {
 	log.Println("[Main] JWTAuth middleware created")
 
 	// Initialize PushService (WebSocket push channel)
-	pushService := push.NewPushService(eventBus, instanceRepo, userRepo)
+	pushService := push.NewPushService(eventBus, instanceRepo, userRepo, actionDispatcher)
 	pushService.Start()
 	defer pushService.Stop()
 	pushHandler := push.NewPushHandler(pushService)
@@ -166,9 +170,11 @@ func main() {
 	publicInstanceService := service.NewPublicInstanceService(db.DB)
 	log.Println("[Main] PublicInstanceService created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService, sigCtx.Done())
+	httpApiErr := http_api.Run(actionDispatcher, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService, sigCtx.Done())
 	log.Println("[Main] After calling http_api.Run")
 	stopSignals()
+	actionDispatcher.Stop()
+	log.Println("[Main] ActionDispatcher stopped")
 	eventBus.Stop()
 	log.Println("[Main] EventBus stopped")
 	if httpApiErr != nil {

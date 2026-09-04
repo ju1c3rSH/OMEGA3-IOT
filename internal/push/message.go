@@ -7,13 +7,13 @@ import (
 
 // Message types — server → client
 const (
-	TypeEventPush       = "event.push"
-	TypeDeviceStatus    = "device.status"
-	TypePropertyUpdate  = "property.update"
-	TypeActionResult    = "action.result"
-	TypeSystemNotice    = "system.notice"
-	TypePong            = "pong"
-	TypeActionResponse  = "action.response"
+	TypeEventPush      = "event.push"
+	TypeDeviceStatus   = "device.status"
+	TypePropertyUpdate = "property.update"
+	TypeActionResult   = "action.result"
+	TypeSystemNotice   = "system.notice"
+	TypePong           = "pong"
+	TypeActionResponse = "action.response"
 )
 
 // Message types — client → server
@@ -79,6 +79,7 @@ type ActionResultPayload struct {
 	Command    string `json:"command"`
 	Success    bool   `json:"success"`
 	Error      string `json:"error,omitempty"`
+	ActionID   string `json:"action_id,omitempty"`
 }
 
 // SystemNoticePayload is sent for system-level notifications.
@@ -89,8 +90,9 @@ type SystemNoticePayload struct {
 
 // ActionResponsePayload is sent in response to an action.send from the client.
 type ActionResponsePayload struct {
-	Success bool   `json:"success"`
-	Error   string `json:"error,omitempty"`
+	Success  bool   `json:"success"`
+	Error    string `json:"error,omitempty"`
+	ActionID string `json:"action_id,omitempty"`
 }
 
 // ─── Client → Server Payloads ───

@@ -3,7 +3,11 @@ package push
 import (
 	"OMEGA3-IOT/internal/eventbus"
 	"OMEGA3-IOT/internal/logger"
+	"OMEGA3-IOT/internal/model"
 	"OMEGA3-IOT/internal/repository"
+	"OMEGA3-IOT/internal/service"
+	"OMEGA3-IOT/internal/spec"
+	"OMEGA3-IOT/internal/utils"
 	"context"
 	"encoding/json"
 	"log"
@@ -13,9 +17,9 @@ import (
 )
 
 const (
-	ackTimeout     = 10 * time.Second
-	maxRetransmit  = 1
-	cleanInterval  = 30 * time.Second
+	ackTimeout    = 10 * time.Second
+	maxRetransmit = 1
+	cleanInterval = 30 * time.Second
 )
 
 // pendingMessage tracks an unacknowledged push message.
@@ -32,6 +36,7 @@ type PushService struct {
 	eventBus     *eventbus.EventBus
 	instanceRepo repository.InstanceRepository
 	userRepo     repository.UserRepository
+	dispatcher   *service.ActionDispatcher
 	seqCounter   int64
 	pendingACKs  sync.Map // int64 → *pendingMessage
 	stopCh       chan struct{}
@@ -43,11 +48,13 @@ func NewPushService(
 	eventBus *eventbus.EventBus,
 	instanceRepo repository.InstanceRepository,
 	userRepo repository.UserRepository,
+	dispatcher *service.ActionDispatcher,
 ) *PushService {
 	return &PushService{
 		eventBus:     eventBus,
 		instanceRepo: instanceRepo,
 		userRepo:     userRepo,
+		dispatcher:   dispatcher,
 		stopCh:       make(chan struct{}),
 	}
 }
@@ -234,12 +241,14 @@ func (ps *PushService) handleActionResult(ctx context.Context, event logger.Devi
 	command, _ := event.Metadata["command"].(string)
 	success, _ := event.Metadata["success"].(bool)
 	errMsg, _ := event.Metadata["error"].(string)
+	actionID, _ := event.Metadata["action_id"].(string)
 
 	payload := ActionResultPayload{
 		DeviceUUID: event.DeviceUUID,
 		Command:    command,
 		Success:    success,
 		Error:      errMsg,
+		ActionID:   actionID,
 	}
 	msg := NewMessage(TypeActionResult, payload)
 	ps.PushToDeviceOwner(event.DeviceUUID, msg)
@@ -283,6 +292,12 @@ func (ps *PushService) OnDisconnect(client *Client) {
 }
 
 func (ps *PushService) handleActionSend(client *Client, payload *ActionSendPayload) {
+	if ps.dispatcher == nil {
+		log.Printf("[PushService] action.send rejected: dispatcher not available (user %s)", client.UserUUID)
+		client.Send(NewMessage(TypeActionResponse, ActionResponsePayload{Success: false, Error: "action dispatch unavailable"}))
+		return
+	}
+
 	// Verify the user has access to this device
 	instance, err := ps.instanceRepo.FindByUUID(payload.DeviceUUID)
 	if err != nil {
@@ -294,11 +309,27 @@ func (ps *PushService) handleActionSend(client *Client, payload *ActionSendPaylo
 		return
 	}
 
-	// Forward to MQTT via the existing MQTTService would be ideal,
-	// but for now we publish an event that can be picked up.
-	// The actual MQTT publish should be done by a service that has access to the MQTT broker.
-	log.Printf("[PushService] Action '%s' requested for device %s by user %s", payload.Command, payload.DeviceUUID, client.UserUUID)
-	client.Send(NewMessage(TypeActionResponse, ActionResponsePayload{Success: true}))
+	// Mirror the HTTP path: validate the action against the device spec
+	typeDef, ok := model.GlobalDeviceTypeManager.GetByName(instance.Type)
+	if !ok {
+		client.Send(NewMessage(TypeActionResponse, ActionResponsePayload{Success: false, Error: "unknown device type"}))
+		return
+	}
+	if err := spec.ValidateAction(typeDef, payload.Command, payload.Params); err != nil {
+		client.Send(NewMessage(TypeActionResponse, ActionResponsePayload{Success: false, Error: err.Error()}))
+		return
+	}
+
+	actionID := utils.GenerateUUID().String()
+	ps.dispatcher.Dispatch(instance.InstanceUUID, payload.Command, model.Action{
+		Command:   payload.Command,
+		Params:    payload.Params,
+		Timestamp: time.Now().Unix(),
+		ActionID:  actionID,
+	})
+	log.Printf("[PushService] Action '%s' (action_id=%s) dispatched to device %s by user %s",
+		payload.Command, actionID, payload.DeviceUUID, client.UserUUID)
+	client.Send(NewMessage(TypeActionResponse, ActionResponsePayload{Success: true, ActionID: actionID}))
 }
 
 // ─── ACK Retransmit ───

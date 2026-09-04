@@ -48,23 +48,29 @@ Content-Type: application/json
 | `command` | string | ✅ | 指令名称（须符合设备类型 spec 定义） |
 | `params` | object | 否 | 指令参数 |
 
-**响应示例**:
+**响应**: **`202 Accepted`（异步下发）**。服务端将指令交给后台分发队列（ActionDispatcher）异步经 MQTT 发送，HTTP 请求不再等待 broker 响应。响应体包含 `action_id`，用于与后续结果推送配对。
+
 ```json
 {
-  "code": 200,
-  "message": "Action sent successfully",
+  "code": 202,
+  "message": "Action accepted",
   "data": {
     "instance_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "command": "reboot"
+    "command": "reboot",
+    "action_id": "0b8f4c1e-2d3a-4b5c-6e7f-8a9b0c1d2e3f"
   }
 }
 ```
+
+**结果获取**: 执行结果通过 WebSocket 推送（`action.result` 消息）。新固件会在结果中回显 `action_id`，前端据此配对指令与结果；旧固件不回显时仅能按 `command` 名匹配。MQTT 下发失败（如 broker 不可用）不返回 HTTP 错误，而是通过 WebSocket 推送 `event.push`（`device.error`，metadata 含 `command`/`action_id`/`error`）。
 
 **错误响应**:
 - `400` Invalid or missing query parameter
 - `403` Access denied — 无写权限
 - `404` Device not found
 - `400` Action validation failed — 指令不符合设备 spec
+
+> 变更说明：此前同步等待 MQTT publish，broker 降级时接口最长阻塞 3s 并返回 `500`；现改为 `202` 异步，`500` 错误码不再出现于该端点。
 
 ## 历史数据
 

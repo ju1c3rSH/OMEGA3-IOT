@@ -60,9 +60,6 @@ type Data struct {
 	Event      model.DeviceEvent                          `json:"event"`
 	Action     model.Action                               `json:"action"`
 }
-type Publisher interface {
-	PublishActionToDevice(deviceUUID string, actionName string, payload interface{}) error
-}
 
 func NewMQTTService(brokerURL string, deviceService *DeviceService, loggerService logger.LoggerInterface, presenceService *PresenceService, eventBus *eventbus.EventBus) (*MQTTService, error) {
 	options := mqtt.NewClientOptions()
@@ -118,11 +115,11 @@ func (m *MQTTService) PublishActionToDevice(deviceUUID string, commandName strin
 		return fmt.Errorf("failed to marshal action payload: %w", err)
 	}
 	token := m.broker.Publish(topic, 1, false, payloadBytes)
-	// Fix P1-2: previously token.Wait() blocked the Gin HTTP handler
-	// indefinitely (up to broker RTT+retransmit). Use WaitTimeout so the
-	// HTTP thread is bounded to mqttPublishTimeout (3s) and can return
-	// 500/504 quickly. Caller (SendActionHandlerFactory) will surface the
-	// error; an async 202 pattern could be added if needed.
+	// Fix P1-2: previously token.Wait() blocked the caller indefinitely
+	// (up to broker RTT+retransmit). Use WaitTimeout so the calling
+	// goroutine is bounded to mqttPublishTimeout (3s). The async HTTP path
+	// (SendActionHandlerFactory) runs this inside ActionDispatcher, so a
+	// degraded broker only consumes a dispatcher slot, not the HTTP thread.
 	// See https://github.com/eclipse/paho.mqtt.golang/blob/master/token.go#L73
 	// and https://github.com/eclipse/paho.mqtt.golang/issues/445 (Done channel).
 	if !token.WaitTimeout(mqttPublishTimeout) {
@@ -375,9 +372,10 @@ type ActionResultMessage struct {
 	VerifyCode string `json:"verify_code"`
 	TimeStamp  int64  `json:"timestamp"`
 	Data       struct {
-		Command string `json:"command"`
-		Success bool   `json:"success"`
-		Error   string `json:"error,omitempty"`
+		Command  string `json:"command"`
+		Success  bool   `json:"success"`
+		Error    string `json:"error,omitempty"`
+		ActionID string `json:"action_id,omitempty"`
 	} `json:"data"`
 }
 
@@ -410,6 +408,7 @@ func (m *MQTTService) processActionResult(ctx context.Context, job ingestJob) {
 	resultEvent.Metadata["command"] = message.Data.Command
 	resultEvent.Metadata["success"] = message.Data.Success
 	resultEvent.Metadata["error"] = message.Data.Error
+	resultEvent.Metadata["action_id"] = message.Data.ActionID
 	m.eventBus.Publish(ctx, resultEvent)
 
 	log.Printf("[MQTT] Action result from device %s: command=%s success=%v", deviceUUID, message.Data.Command, message.Data.Success)

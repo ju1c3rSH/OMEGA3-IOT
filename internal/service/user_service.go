@@ -282,10 +282,15 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 		log.Printf("Warning: Failed to mark registration record %s as bound: %v", record.DeviceUUID, err)
 	}
 
-	// Send action to device
+	// Send action to device (sync path; retried once with short backoff
+	// because a degraded broker should not silently drop the first
+	// enable_properties_upload on a fresh bind)
 	actionPayload := model.NewEnablePropertiesUploadAction(30)
-	if err := s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", *actionPayload); err != nil {
-		log.Printf("Warning: Failed to send enable_properties_upload action to device %s: %v", instance.InstanceUUID, err)
+	actionPayload.ActionID = utils.GenerateUUID().String()
+	if err := tryTwice(func() error {
+		return s.mqttSvc.PublishActionToDevice(instance.InstanceUUID, "enable_properties_upload", *actionPayload)
+	}); err != nil {
+		log.Printf("Warning: Failed to send enable_properties_upload action to device %s after retry: %v", instance.InstanceUUID, err)
 	}
 
 	// Log successful device binding
@@ -301,6 +306,17 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 	s.loggerService.EmitUserLog(logEvent)
 
 	return instance, nil
+}
+
+// tryTwice runs fn and, on failure, retries once after a short backoff.
+// The backoff uses time.After in the caller's goroutine only — the bind path
+// is low-frequency, so a 500ms worst-case stall is acceptable.
+func tryTwice(fn func() error) error {
+	if err := fn(); err == nil {
+		return nil
+	}
+	<-time.After(500 * time.Millisecond)
+	return fn()
 }
 
 func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) error {

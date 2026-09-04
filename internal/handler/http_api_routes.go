@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, mqttService *service.MQTTService, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, publicInstanceService *service.PublicInstanceService) {
+func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *DeviceHandler, logHandler *logger.LogHandler, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *DeviceFolderHandler, actionDispatcher *service.ActionDispatcher, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *UserGroupHandler, adminHandler *AdminHandler, publicInstanceService *service.PublicInstanceService) {
 	// Avatar files: use versioned URLs (?t=updatedAt), so each version
 	// is immutable. Aggressive caching is safe — new uploads get new timestamps.
 	router.Use(func(c *gin.Context) {
@@ -59,7 +59,7 @@ func RegRoutes(router *gin.Engine, userHandler *UserHandler, deviceHandler *Devi
 	protected.Use(jwtAuth.JwtAuthMiddleWare())
 	{
 		protected.POST("/devices/:instance_uuid/getHistoryData", MiddleWares.DeviceAccessMiddleware(deviceShareService, "read"), GetDeviceHistoryHandlerFactory(deviceService))
-		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(deviceShareService, "write"), SendActionHandlerFactory(mqttService, deviceService))
+		protected.POST("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(deviceShareService, "write"), SendActionHandlerFactory(actionDispatcher, deviceService))
 		protected.GET("/devices/:instance_uuid/actions", MiddleWares.DeviceAccessMiddleware(deviceShareService, "read"), GetDeviceActionsHandlerFactory(deviceService))
 		protected.GET("/devices/accessible", GetAccessibleDevicesHandlerFactory(deviceShareService))
 		protected.POST("/devices/:instance_uuid/share", MiddleWares.DeviceAccessMiddleware(deviceShareService, "write"), ShareDeviceHandlerFactory(deviceShareService))

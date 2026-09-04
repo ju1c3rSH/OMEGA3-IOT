@@ -26,7 +26,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *handler.DeviceFolderHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler, adminHandler *handler.AdminHandler, publicInstanceService *service.PublicInstanceService, shutdown <-chan struct{}) error {
+func Run(actionDispatcher *service.ActionDispatcher, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *handler.DeviceFolderHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler, adminHandler *handler.AdminHandler, publicInstanceService *service.PublicInstanceService, shutdown <-chan struct{}) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -62,7 +62,7 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 		MaxAge:        12 * time.Hour,
 	}))
 
-	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceFolderHandler, mqttService, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService)
+	handler.RegRoutes(r, userHandler, deviceHandler, logHandler, deviceService, deviceShareService, deviceFolderHandler, actionDispatcher, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService)
 
 	log.Println("Starting server on :" + config.Server.Port)
 

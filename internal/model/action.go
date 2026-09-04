@@ -6,6 +6,7 @@ type Action struct {
 	Command   string      `json:"command"`
 	Params    interface{} `json:"params"`
 	Timestamp int64       `json:"timestamp,omitempty"`
+	ActionID  string      `json:"action_id,omitempty"`
 }
 
 type ActionType string

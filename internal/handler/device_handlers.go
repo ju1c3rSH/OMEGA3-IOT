@@ -261,7 +261,7 @@ func DeviceRegisterAnonymouslyHandlerFactory(deviceService *service.DeviceServic
 	}
 }
 
-func SendActionHandlerFactory(mqttService *service.MQTTService, deviceService *service.DeviceService) gin.HandlerFunc {
+func SendActionHandlerFactory(dispatcher *service.ActionDispatcher, deviceService *service.DeviceService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		instanceUUID := c.Param("instance_uuid")
 		if instanceUUID == "" {
@@ -301,23 +301,25 @@ func SendActionHandlerFactory(mqttService *service.MQTTService, deviceService *s
 			return
 		}
 
+		actionID := utils.GenerateUUID().String()
 		actionPayload := model.Action{
 			Command:   input.Command,
 			Params:    input.Params,
 			Timestamp: time.Now().Unix(),
+			ActionID:  actionID,
 		}
 
-		err = mqttService.PublishActionToDevice(instanceUUID, actionPayload.Command, actionPayload)
-		if err != nil {
-			response := types.NewErrorResponse(http.StatusInternalServerError, "Failed to send action", err.Error())
-			c.JSON(http.StatusInternalServerError, response)
-			return
-		}
+		// Async hand-off: the MQTT publish runs in the ActionDispatcher
+		// goroutine pool, so broker degradation cannot stall this handler.
+		// Dispatch failures are surfaced as device.error events on the
+		// EventBus (WebSocket push), not as HTTP errors.
+		dispatcher.Dispatch(instanceUUID, actionPayload.Command, actionPayload)
 		response := types.NewSuccessResponseWithCode(gin.H{
 			"instance_uuid": instanceUUID,
 			"command":       input.Command,
-		}, http.StatusOK, "Action sent successfully")
-		c.JSON(http.StatusOK, response)
+			"action_id":     actionID,
+		}, http.StatusAccepted, "Action accepted")
+		c.JSON(http.StatusAccepted, response)
 	}
 }
 
