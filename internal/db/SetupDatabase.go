@@ -90,22 +90,30 @@ func NewIotDBFromConfig(config config.Config) (*IOTDBClient, error) {
 		Password: config.IoTDB.Password,
 	}
 
-	sessionPool := client.NewSessionPool(
-		poolConfig,
-		config.IoTDB.Pool.MaxConnections,
-		int(config.IoTDB.Pool.TimeOut),
-		int(config.IoTDB.Pool.TimeOut),
-		config.IoTDB.Pool.FetchMetadataAuto,
-	)
+	waitTimeoutMs := int(config.IoTDB.Pool.EffectiveWaitTimeoutMs())
+	openTimeoutMs := int(config.IoTDB.Pool.EffectiveOpenTimeoutMs())
+	readMax := config.IoTDB.Pool.EffectiveReadMaxConnections()
+	writeMax := config.IoTDB.Pool.EffectiveWriteMaxConnections()
 
-	session, err := sessionPool.GetSession()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get a session from pool: %v", err)
+	newPool := func(maxSize int) SessionPool {
+		factory := func() SessionPool {
+			sp := client.NewSessionPool(poolConfig, maxSize, openTimeoutMs, waitTimeoutMs, config.IoTDB.Pool.FetchMetadataAuto)
+			return &sp
+		}
+		return NewSessionPoolWrapper(factory)
 	}
-	defer sessionPool.PutBack(session)
 
-	if err := session.Open(false, int(config.IoTDB.Pool.TimeOut)); err != nil { // Open 通常不带 timeout 参数
-		return nil, fmt.Errorf("failed to open session from pool: %v", err)
+	readPool := newPool(readMax)
+	writePool := newPool(writeMax)
+
+	session, err := writePool.GetSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get a session from pool: %w", err)
+	}
+	defer writePool.PutBack(session)
+
+	if err := session.Open(false, openTimeoutMs); err != nil {
+		return nil, fmt.Errorf("failed to open session from pool: %w", err)
 	}
 	/*
 		if err := session.ExecuteNonQueryStatement("CREATE DATABASE root.omega3"); err != nil {
@@ -115,7 +123,10 @@ func NewIotDBFromConfig(config config.Config) (*IOTDBClient, error) {
 	*/
 	log.Printf("IoTDB Connected")
 	return &IOTDBClient{
-		SessionPool: sessionPool,
-		Config:      config,
+		SessionPool:  writePool,
+		readPool:     readPool,
+		writePool:    writePool,
+		StorageGroup: "",
+		Config:       config,
 	}, nil
 }

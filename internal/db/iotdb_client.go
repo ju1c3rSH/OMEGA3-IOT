@@ -12,31 +12,50 @@ import (
 
 type IOTDBClient struct {
 	//session      *client.Session
-	SessionPool  client.SessionPool
+	SessionPool SessionPool
+	readPool    SessionPool
+	writePool   SessionPool
 	StorageGroup string
 	//TODO 尚且需要确定SG是否唯一？
 	Config config.Config
 }
 
+func (i *IOTDBClient) ReadPool() SessionPool {
+	if i.readPool != nil {
+		return i.readPool
+	}
+	return i.SessionPool
+}
+
+func (i *IOTDBClient) WritePool() SessionPool {
+	if i.writePool != nil {
+		return i.writePool
+	}
+	return i.SessionPool
+}
+
 func (i *IOTDBClient) Close() {
-	i.SessionPool.Close()
+	i.WritePool().Close()
+	if rp := i.readPool; rp != nil && rp != i.writePool {
+		rp.Close()
+	}
 }
 
 func (i *IOTDBClient) InsertRecord(deviceId string, measurements []string, dataTypes []client.TSDataType, values []interface{}, timestamp int64) (r *common.TSStatus, err error) {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.WritePool().GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.WritePool().PutBack(session)
 	return session.InsertRecord(deviceId, measurements, dataTypes, values, timestamp)
 }
 
 func (i *IOTDBClient) ExecuteQuery(sql string, result *interface{}) error {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.ReadPool().GetSession()
 	if err != nil {
 		return fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.ReadPool().PutBack(session)
 	queryDataSet, err := session.ExecuteQueryStatement(sql, &i.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
 		return fmt.Errorf("failed to execute query: %w", err)
@@ -46,22 +65,22 @@ func (i *IOTDBClient) ExecuteQuery(sql string, result *interface{}) error {
 	return nil
 }
 func (i *IOTDBClient) ExecuteNonQuery(sql string) (*common.TSStatus, error) {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.WritePool().GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.WritePool().PutBack(session)
 
 	return session.ExecuteNonQueryStatement(sql)
 }
 
 // InsertRecordTyped inserts a record using SQL INSERT to bypass client library schema cache issues.
 func (i *IOTDBClient) InsertRecordTyped(deviceId string, measurements []string, dataTypes []client.TSDataType, values []interface{}, timestamp int64) error {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.WritePool().PutBack(session)
 
 	// Build SQL: INSERT INTO root.mm1.device_data.{uuid}(timestamp, m1, m2, ...) VALUES(ts, v1, v2, ...)
 	measurementStr := strings.Join(measurements, ", ")
@@ -96,11 +115,11 @@ func (i *IOTDBClient) InsertRecordTyped(deviceId string, measurements []string, 
 }
 
 func (i *IOTDBClient) InitializeSchema() error {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.WritePool().PutBack(session)
 
 	storageGroup := "root.mm1"
 	//latestStorageGroup := "root.mm1_latest"
@@ -161,12 +180,12 @@ func (i *IOTDBClient) CheckError(status *common.TSStatus, err error) error {
 }
 
 func (i *IOTDBClient) setStorageGroup(storageGroup string) error {
-	session, err := i.SessionPool.GetSession()
+	session, err := i.WritePool().GetSession()
 	if err != nil {
 		log.Printf("failed to get session from pool: %v", err)
 		return fmt.Errorf("failed to get session from pool: %w", err)
 	}
-	defer i.SessionPool.PutBack(session)
+	defer i.WritePool().PutBack(session)
 
 	i.StorageGroup = storageGroup
 	status, err := session.SetStorageGroup(storageGroup)

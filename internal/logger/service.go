@@ -119,11 +119,11 @@ func (ls *LoggerService) writeDeviceLog(event DeviceLogEvent) error {
 		values = append(values, event.ErrorCode, event.ErrorDetail)
 	}
 
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.WritePool().PutBack(session)
 
 	_, err = session.InsertRecord(devicePath, measurements, dataTypes, values, timestamp)
 	if err != nil {
@@ -152,11 +152,11 @@ func (ls *LoggerService) writeUserLog(event UserLogEvent) error {
 		event.UserAgent,
 	}
 
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.WritePool().PutBack(session)
 
 	_, err = session.InsertRecord(userPath, measurements, dataTypes, values, timestamp)
 	if err != nil {
@@ -184,11 +184,11 @@ func (ls *LoggerService) writeSystemLog(event SystemLogEvent) error {
 		string(metadataJSON),
 	}
 
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.WritePool().PutBack(session)
 
 	_, err = session.InsertRecord(userPath, measurements, dataTypes, values, timestamp)
 	if err != nil {
@@ -234,11 +234,11 @@ func (ls *LoggerService) queryLogs(path string, query LogQuery) (*LogQueryRespon
 	if query.Offset > 10000 {
 		query.Offset = 10000
 	}
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.ReadPool().GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.ReadPool().PutBack(session)
 
 	// Build SQL query - time is stored as ms (UnixMilli) so convert seconds -> ms.
 	// Using numeric time range allows IoTDB partition pruning / pushdown.
@@ -380,11 +380,11 @@ func (ls *LoggerService) queryLogsWithFilter(path string, query LogQuery, filter
 	if !validCol {
 		return nil, fmt.Errorf("invalid filter column: %s", filterColumn)
 	}
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.ReadPool().GetSession()
 	if err != nil {
 		return nil, fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.ReadPool().PutBack(session)
 
 	sql := fmt.Sprintf("SELECT * FROM %s WHERE time >= %d AND time <= %d AND %s = '%s' ORDER BY time DESC LIMIT %d OFFSET %d",
 		path,
@@ -474,11 +474,11 @@ func (ls *LoggerService) queryLogsWithFilter(path string, query LogQuery, filter
 
 // InitializeLogSchema creates the necessary timeseries for logging
 func (ls *LoggerService) InitializeLogSchema() error {
-	session, err := ls.iotdbClient.SessionPool.GetSession()
+	session, err := ls.iotdbClient.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("[LoggerService] failed to get session: %w", err)
 	}
-	defer ls.iotdbClient.SessionPool.PutBack(session)
+	defer ls.iotdbClient.WritePool().PutBack(session)
 
 	// Create user_data storage group if not exists
 	status, err := session.SetStorageGroup("root.mm1.user_data")

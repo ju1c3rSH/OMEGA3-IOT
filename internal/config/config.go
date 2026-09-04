@@ -54,9 +54,41 @@ type Broker struct {
 	Protocol string `mapstructure:"protocol"` // e.g., "tcp", "ssl"
 }
 type Pool struct {
-	MaxConnections    int   `mapstructure:"maxConnections"`
-	TimeOut           int64 `mapstructure:"timeout"`
-	FetchMetadataAuto bool  `mapstructure:"fetchMetadataAuto"`
+	MaxConnections      int   `mapstructure:"maxConnections"`
+	TimeOut             int64 `mapstructure:"timeout"`
+	WaitTimeoutMs       int64 `mapstructure:"waitTimeoutMs"`
+	OpenTimeoutMs       int64 `mapstructure:"openTimeoutMs"`
+	ReadMaxConnections  int   `mapstructure:"readMaxConnections"`
+	WriteMaxConnections int   `mapstructure:"writeMaxConnections"`
+	FetchMetadataAuto   bool  `mapstructure:"fetchMetadataAuto"`
+}
+
+func (p Pool) EffectiveWaitTimeoutMs() int64 {
+	if p.WaitTimeoutMs > 0 {
+		return p.WaitTimeoutMs
+	}
+	return p.TimeOut
+}
+
+func (p Pool) EffectiveOpenTimeoutMs() int64 {
+	if p.OpenTimeoutMs > 0 {
+		return p.OpenTimeoutMs
+	}
+	return p.TimeOut
+}
+
+func (p Pool) EffectiveReadMaxConnections() int {
+	if p.ReadMaxConnections > 0 {
+		return p.ReadMaxConnections
+	}
+	return p.MaxConnections
+}
+
+func (p Pool) EffectiveWriteMaxConnections() int {
+	if p.WriteMaxConnections > 0 {
+		return p.WriteMaxConnections
+	}
+	return p.MaxConnections
 }
 
 func (b Broker) Address() string {
@@ -266,6 +298,10 @@ func defineFlags() {
 	// CLI flags take precedence over file via viper.BindPFlags.
 	pflag.Int("iotdb.pool.maxconnections", 20, "IoTDB 连接池最大连接数")
 	pflag.Int64("iotdb.pool.timeout", 3000, "IoTDB 连接池超时")
+	pflag.Int64("iotdb.pool.waittimeoutms", 0, "IoTDB GetSession 等待超时(毫秒)，0 时回退 pool.timeout")
+	pflag.Int64("iotdb.pool.opentimeoutms", 0, "IoTDB 会话连接超时(毫秒)，0 时回退 pool.timeout")
+	pflag.Int("iotdb.pool.readmaxconnections", 0, "IoTDB 读池最大连接数，0 时回退 pool.maxconnections")
+	pflag.Int("iotdb.pool.writemaxconnections", 0, "IoTDB 写池最大连接数，0 时回退 pool.maxconnections")
 	pflag.Bool("iotdb.pool.fetchmetadataauto", false, "IoTDB 自动获取元数据")
 
 	// MQTT Broker配置

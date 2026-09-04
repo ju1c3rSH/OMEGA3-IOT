@@ -189,11 +189,11 @@ func (r *iotdbTelemetryRepository) QueryTelemetry(deviceUUID string, startTime, 
 	sql := fmt.Sprintf("SELECT %s FROM %s WHERE time >= %d AND time <= %d ORDER BY time DESC LIMIT %d OFFSET %d",
 		selectClause, devicePath, startMs, endMs, limit, offset)
 
-	session, err := r.client.SessionPool.GetSession()
+	session, err := r.client.ReadPool().GetSession()
 	if err != nil {
 		return nil, err
 	}
-	defer r.client.SessionPool.PutBack(session)
+	defer r.client.ReadPool().PutBack(session)
 
 	dataSet, err := session.ExecuteQueryStatement(sql, &r.client.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
@@ -260,11 +260,11 @@ func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (*Tel
 	devicePath := utils.ConvertHyphenIntoDash(fmt.Sprintf("root.mm1.device_data.%s", deviceUUID))
 	sql := fmt.Sprintf("SELECT * FROM %s ORDER BY time DESC LIMIT 1", devicePath)
 
-	session, err := r.client.SessionPool.GetSession()
+	session, err := r.client.ReadPool().GetSession()
 	if err != nil {
 		return &TelemetryData{}, err
 	}
-	defer r.client.SessionPool.PutBack(session)
+	defer r.client.ReadPool().PutBack(session)
 
 	dataSet, err := session.ExecuteQueryStatement(sql, &r.client.Config.IoTDB.QueryTimeoutMs)
 	if err != nil {
@@ -305,11 +305,11 @@ func (r *iotdbTelemetryRepository) QueryLatestTelemetry(deviceUUID string) (*Tel
 }
 
 func (r *iotdbTelemetryRepository) CreateTimeseries(deviceUUID string, propertyNames []string, dataTypes []client.TSDataType) error {
-	session, err := r.client.SessionPool.GetSession()
+	session, err := r.client.WritePool().GetSession()
 	if err != nil {
 		return err
 	}
-	defer r.client.SessionPool.PutBack(session)
+	defer r.client.WritePool().PutBack(session)
 
 	for i, propName := range propertyNames {
 		path := fmt.Sprintf("root.mm1.device_data.%s.%s", deviceUUID, propName)

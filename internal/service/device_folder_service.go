@@ -68,12 +68,12 @@ func (s *DeviceFolderService) consumeMetrics() {
 			dataTypes := []client.TSDataType{client.STRING, client.INT64, client.INT64}
 			values := []interface{}{m.operationType, m.userID, int64(1)}
 
-			session, err := s.iotdbClient.SessionPool.GetSession()
+			session, err := s.iotdbClient.WritePool().GetSession()
 			if err != nil {
 				log.Printf("[DeviceFolderService] Failed to get IoTDB session for metrics: %v", err)
 				return
 			}
-			defer s.iotdbClient.SessionPool.PutBack(session)
+			defer s.iotdbClient.WritePool().PutBack(session)
 
 			if _, err := session.InsertRecord(path, measurements, dataTypes, values, timestamp); err != nil {
 				log.Printf("[DeviceFolderService] Failed to write metrics to IoTDB: %v", err)

@@ -13,9 +13,14 @@ IoTDB:
   password: your_password
   queryTimeoutMs: 4000
   pool:
-
+    # 总连接数建议 <= 40（IoTDB 默认 Thrift worker 64）：读 24 / 写 16
     maxConnections: 20
+    # 旧字段，作为 waitTimeoutMs / openTimeoutMs 的回退值
     timeout: 3000
+    waitTimeoutMs: 500
+    openTimeoutMs: 3000
+    readMaxConnections: 24
+    writeMaxConnections: 16
     fetchMetadataAuto: false
 
 

@@ -304,11 +304,11 @@ func (s *UserService) BindDeviceByRegCode(userUUID string, regCode string, devic
 }
 
 func (s *UserService) createDeviceTimeseriesInIoTDB(instance model.Instance) error {
-	session, err := s.iotDBClient.SessionPool.GetSession()
+	session, err := s.iotDBClient.WritePool().GetSession()
 	if err != nil {
 		return fmt.Errorf("[UserService] failed to get session: %w", err)
 	}
-	defer s.iotDBClient.SessionPool.PutBack(session)
+	defer s.iotDBClient.WritePool().PutBack(session)
 
 	for propKey, meta := range instance.Properties.Items {
 		dataType, encoding, compression := s.iotDBClient.MapConvertToIotDBType(meta.Meta)
