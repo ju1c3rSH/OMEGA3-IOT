@@ -136,7 +136,7 @@ func main() {
 	adminUserRepo := repository.NewAdminUserRepository(db.DB)
 	adminDevRepo := repository.NewAdminDeviceRepository(db.DB)
 	adminLogRepo := repository.NewAdminLogRepository(db.DB)
-	adminService := service.NewAdminService(db.DB, userRepo, adminUserRepo, adminDevRepo, instanceRepo, groupRepo, groupMemberRepo, adminLogRepo, dhService, nonceRepo)
+	adminService := service.NewAdminService(db.DB, userRepo, adminUserRepo, adminDevRepo, instanceRepo, groupRepo, groupMemberRepo, adminLogRepo, dhService, nonceRepo, deviceService)
 	adminHandler := handler.NewAdminHandler(adminService)
 	log.Println("[Main] AdminHandler created")
 

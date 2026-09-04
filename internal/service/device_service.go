@@ -21,6 +21,7 @@ type DeviceService struct {
 	iotDBClient            *db.IOTDBClient
 	db                     *gorm.DB
 	iotDBRepo              repository.TelemetryRepository
+	authCache              *InstanceAuthCache
 }
 
 func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
@@ -30,6 +31,7 @@ func NewDeviceService(db *gorm.DB, iotDBClient *db.IOTDBClient) *DeviceService {
 		iotDBClient:            iotDBClient,
 		db:                     db,
 		iotDBRepo:              repository.NewTelemetryRepository(iotDBClient),
+		authCache:              NewInstanceAuthCache(),
 	}
 }
 
@@ -73,6 +75,11 @@ func (s *DeviceService) updateDeviceProperties(instance model.Instance, data map
 	}); err != nil {
 		return fmt.Errorf("failed to save updated instance %s to database: %w", instance.InstanceUUID, err)
 	}
+
+	// Refresh the auth cache with the exact state persisted above, so the
+	// next MQTT message for this device stays a cache hit and still sees the
+	// new property values (instead of a 30s-stale snapshot).
+	s.authCache.Put(&instance)
 
 	log.Printf("Database record for device %s updated with new properties.", instance.InstanceUUID)
 
@@ -380,7 +387,11 @@ func (s *DeviceService) UpdateInstanceProperties(instanceUUID string, properties
 	instance.UpdatedAt = time.Now()
 	instance.LastSeen = time.Now().Unix()
 
-	return s.instanceRepo.Update(instance)
+	if err := s.instanceRepo.Update(instance); err != nil {
+		return err
+	}
+	s.authCache.Put(instance)
+	return nil
 }
 
 // UpdateInstanceOnlineStatus updates device online status
@@ -417,8 +428,18 @@ func (s *DeviceService) GetDeviceActions(instanceUUID string) (map[string]model.
 	return actions, nil
 }
 
-// GetDeviceByUUIDAndVerifyHash retrieves a device by UUID and verifies the hash
+// GetDeviceByUUIDAndVerifyHash retrieves a device by UUID and verifies the hash.
+// Cache-first: a hit skips the MySQL point query on the MQTT hot path; a hit
+// with a wrong hash fails fast without touching the database. The returned
+// instance is a copy-on-access snapshot, safe for concurrent worker mutation.
 func (s *DeviceService) GetDeviceByUUIDAndVerifyHash(instanceUUID string, verifyHash string) (*model.Instance, error) {
+	if instance, ok := s.authCache.Get(instanceUUID); ok {
+		if instance.VerifyHash != verifyHash {
+			return nil, fmt.Errorf("invalid verify hash")
+		}
+		return instance, nil
+	}
+
 	instance, err := s.instanceRepo.FindByUUID(instanceUUID)
 	if err != nil {
 		return nil, err
@@ -426,7 +447,15 @@ func (s *DeviceService) GetDeviceByUUIDAndVerifyHash(instanceUUID string, verify
 	if instance.VerifyHash != verifyHash {
 		return nil, fmt.Errorf("invalid verify hash")
 	}
+	s.authCache.Put(instance)
 	return instance, nil
+}
+
+// InvalidateAuthCache evicts the cached auth snapshot for one instance.
+// Exposed for other services that write to the instances table directly
+// (e.g. AdminService), which do not share DeviceService's internal paths.
+func (s *DeviceService) InvalidateAuthCache(instanceUUID string) {
+	s.authCache.Invalidate(instanceUUID)
 }
 
 // UpdateDeviceProperties updates device properties (used by MQTT service)

@@ -23,6 +23,7 @@ type AdminService struct {
 	adminLogRepo  repository.AdminLogRepository
 	dhService     *utils.DHService
 	nonceRepo     repository.NonceRepository
+	deviceSvc     *DeviceService
 }
 
 // NewAdminService creates a new AdminService.
@@ -37,6 +38,7 @@ func NewAdminService(
 	adminLogRepo repository.AdminLogRepository,
 	dhService *utils.DHService,
 	nonceRepo repository.NonceRepository,
+	deviceSvc *DeviceService,
 ) *AdminService {
 	return &AdminService{
 		db:            db,
@@ -49,6 +51,7 @@ func NewAdminService(
 		adminLogRepo:  adminLogRepo,
 		dhService:     dhService,
 		nonceRepo:     nonceRepo,
+		deviceSvc:     deviceSvc,
 	}
 }
 
@@ -371,6 +374,7 @@ func (s *AdminService) EditDevice(instanceUUID string, name, description, remark
 	if err := s.instanceRepo.UpdateFields(instanceUUID, fields); err != nil {
 		return err
 	}
+	s.deviceSvc.InvalidateAuthCache(instanceUUID)
 	s.logAction(adminUUID, "device.edit", "device", instanceUUID, "", ip)
 	return nil
 }
@@ -404,6 +408,7 @@ func (s *AdminService) DeleteDevice(instanceUUID, adminUUID, ip string) error {
 		if err := s.instanceRepo.DeleteByUUID(instanceUUID); err != nil {
 			return err
 		}
+		s.deviceSvc.InvalidateAuthCache(instanceUUID)
 		s.logAction(adminUUID, "device.delete", "device", instanceUUID,
 			fmt.Sprintf(`{"name":"%s"}`, device.Name), ip)
 		return nil
@@ -432,6 +437,7 @@ func (s *AdminService) TransferDevice(instanceUUID, newOwnerUUID string, keepOri
 		}); err != nil {
 			return err
 		}
+		s.deviceSvc.InvalidateAuthCache(instanceUUID)
 
 		// Remove device from all old owner's folders
 		if err := tx.Where("device_uuid = ?", instanceUUID).Delete(&model.DeviceFolderItem{}).Error; err != nil {
