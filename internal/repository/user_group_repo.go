@@ -11,6 +11,7 @@ type UserGroupRepository interface {
 	Create(group *model.UserGroup) error
 	FindByID(id uint) (*model.UserGroup, error)
 	FindByUUID(groupUUID string) (*model.UserGroup, error)
+	FindByUUIDs(groupUUIDs []string) ([]model.UserGroup, error)
 	FindByOwnerUUID(ownerUUID string) ([]model.UserGroup, error)
 	Update(group *model.UserGroup) error
 	UpdateFields(groupUUID string, fields map[string]interface{}) error
@@ -43,6 +44,35 @@ func (r *gormUserGroupRepository) FindByUUID(groupUUID string) (*model.UserGroup
 	var group model.UserGroup
 	err := r.db.Where("group_uuid = ?", groupUUID).First(&group).Error
 	return &group, err
+}
+
+func (r *gormUserGroupRepository) FindByUUIDs(groupUUIDs []string) ([]model.UserGroup, error) {
+	if len(groupUUIDs) == 0 {
+		return []model.UserGroup{}, nil
+	}
+	seen := make(map[string]struct{}, len(groupUUIDs))
+	uniq := make([]string, 0, len(groupUUIDs))
+	for _, id := range groupUUIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			uniq = append(uniq, id)
+		}
+	}
+	const batchSize = 1000
+	var result []model.UserGroup
+	for i := 0; i < len(uniq); i += batchSize {
+		end := i + batchSize
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		batch := uniq[i:end]
+		var batchResult []model.UserGroup
+		if err := r.db.Where("group_uuid IN ?", batch).Find(&batchResult).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, batchResult...)
+	}
+	return result, nil
 }
 
 func (r *gormUserGroupRepository) FindByOwnerUUID(ownerUUID string) ([]model.UserGroup, error) {

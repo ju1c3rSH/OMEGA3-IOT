@@ -23,6 +23,8 @@ type PresenceService struct {
 
 	// in-memory cache of last-known online devices to avoid redundant DB writes
 	onlineDevices sync.Map // map[string]bool
+
+	scanCount int64
 }
 
 func NewPresenceService(
@@ -115,27 +117,57 @@ func (ps *PresenceService) run() {
 	}
 }
 
-// checkStaleDevices scans all devices that are marked online in the DB
-// and marks those with stale LastSeen as offline.
+// checkStaleDevices marks devices with stale LastSeen as offline.
+// The DB (online=1) is the source of truth; the in-memory cache is only a write filter.
+// Note: unlike the old per-device MarkOffline, the batch path does not refresh
+// last_seen — stale values are preserved until the device comes back online.
 func (ps *PresenceService) checkStaleDevices() {
 	threshold := time.Now().Add(-ps.offlineTimeout).Unix()
 
-	// Iterate over our in-memory cache of online devices
-	ps.onlineDevices.Range(func(key, _ interface{}) bool {
-		deviceUUID := key.(string)
+	staleUUIDs, err := ps.instanceRepo.FindStaleOnlineUUIDs(threshold)
+	if err != nil {
+		log.Printf("[PresenceService] Failed to query stale online devices: %v", err)
+		return
+	}
 
-		instance, err := ps.instanceRepo.FindByUUID(deviceUUID)
-		if err != nil {
-			// Device may have been deleted — remove from cache
+	if len(staleUUIDs) > 0 {
+		if err := ps.instanceRepo.MarkOfflineByUUIDs(staleUUIDs, 0); err != nil {
+			log.Printf("[PresenceService] Failed to batch mark devices offline: %v", err)
+			return
+		}
+		for _, deviceUUID := range staleUUIDs {
 			ps.onlineDevices.Delete(deviceUUID)
-			return true
+			log.Printf("[PresenceService] Device %s is now OFFLINE", deviceUUID)
+			ps.emitStatusChange(deviceUUID, false)
 		}
+	}
 
-		if instance.LastSeen < threshold {
-			ps.MarkOffline(deviceUUID)
+	// Ghost sweep: every 60 scans (~1 hour) verify cached entries still exist
+	// online in the DB and drop ghost entries for deleted/offline devices.
+	ps.scanCount++
+	if ps.scanCount%60 == 0 {
+		var cached []string
+		ps.onlineDevices.Range(func(key, _ interface{}) bool {
+			cached = append(cached, key.(string))
+			return true
+		})
+		if len(cached) > 0 {
+			instances, err := ps.instanceRepo.FindByUUIDs(cached)
+			if err != nil {
+				log.Printf("[PresenceService] Ghost sweep query failed: %v", err)
+				return
+			}
+			live := make(map[string]bool, len(instances))
+			for _, inst := range instances {
+				live[inst.InstanceUUID] = inst.Online
+			}
+			for _, deviceUUID := range cached {
+				if !live[deviceUUID] {
+					ps.onlineDevices.Delete(deviceUUID)
+				}
+			}
 		}
-		return true
-	})
+	}
 }
 
 func (ps *PresenceService) emitStatusChange(deviceUUID string, online bool) {

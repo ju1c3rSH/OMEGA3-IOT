@@ -12,14 +12,14 @@ import (
 // PublicInstanceResponse is the safe representation of a public instance,
 // excluding sensitive fields like verify_hash, owner_uuid, sn.
 type PublicInstanceResponse struct {
-	InstanceUUID string            `json:"instance_uuid"`
-	Name         string            `json:"name"`
-	Type         string            `json:"type"`
-	Description  string            `json:"description,omitempty"`
-	Online       bool              `json:"online"`
-	Properties   model.Properties  `json:"properties"`
-	LastSeen     int64             `json:"last_seen"`
-	IsFavorited  bool              `json:"is_favorited,omitempty"`
+	InstanceUUID string           `json:"instance_uuid"`
+	Name         string           `json:"name"`
+	Type         string           `json:"type"`
+	Description  string           `json:"description,omitempty"`
+	Online       bool             `json:"online"`
+	Properties   model.Properties `json:"properties"`
+	LastSeen     int64            `json:"last_seen"`
+	IsFavorited  bool             `json:"is_favorited,omitempty"`
 }
 
 type PublicInstanceService struct {
@@ -132,13 +132,26 @@ func (s *PublicInstanceService) GetFavorites(userUUID string) ([]PublicInstanceR
 		return nil, err
 	}
 
+	favUUIDs := make([]string, 0, len(favorites))
+	for _, fav := range favorites {
+		favUUIDs = append(favUUIDs, fav.InstanceUUID)
+	}
+	instancesByUUID := make(map[string]model.Instance, len(favUUIDs))
+	instances, err := s.publicRepo.FindPublicByUUIDs(favUUIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, inst := range instances {
+		instancesByUUID[inst.InstanceUUID] = inst
+	}
+
 	result := make([]PublicInstanceResponse, 0, len(favorites))
 	for _, fav := range favorites {
-		instance, err := s.publicRepo.FindPublicByUUID(fav.InstanceUUID)
-		if err != nil {
+		instance, ok := instancesByUUID[fav.InstanceUUID]
+		if !ok {
 			continue // skip deleted or unpublicized instances
 		}
-		resp := toPublicResponse(*instance)
+		resp := toPublicResponse(instance)
 		resp.IsFavorited = true
 		result = append(result, resp)
 	}

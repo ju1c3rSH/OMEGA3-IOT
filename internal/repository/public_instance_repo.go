@@ -11,6 +11,7 @@ type PublicInstanceRepository interface {
 	FindAllPublic() ([]model.Instance, error)
 	FindPublicByType(deviceType string) ([]model.Instance, error)
 	FindPublicByUUID(uuid string) (*model.Instance, error)
+	FindPublicByUUIDs(uuids []string) ([]model.Instance, error)
 
 	// Favorite operations
 	AddFavorite(favorite *model.PublicInstanceFavorite) error
@@ -49,6 +50,35 @@ func (r *gormPublicInstanceRepository) FindPublicByUUID(uuid string) (*model.Ins
 	var instance model.Instance
 	err := r.db.Where("instance_uuid = ? AND is_public = ? AND status = ?", uuid, true, "active").First(&instance).Error
 	return &instance, err
+}
+
+func (r *gormPublicInstanceRepository) FindPublicByUUIDs(uuids []string) ([]model.Instance, error) {
+	if len(uuids) == 0 {
+		return []model.Instance{}, nil
+	}
+	seen := make(map[string]struct{}, len(uuids))
+	uniq := make([]string, 0, len(uuids))
+	for _, id := range uuids {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			uniq = append(uniq, id)
+		}
+	}
+	const batchSize = 1000
+	var result []model.Instance
+	for i := 0; i < len(uniq); i += batchSize {
+		end := i + batchSize
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		batch := uniq[i:end]
+		var batchResult []model.Instance
+		if err := r.db.Where("instance_uuid IN ? AND is_public = ? AND status = ?", batch, true, "active").Find(&batchResult).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, batchResult...)
+	}
+	return result, nil
 }
 
 func (r *gormPublicInstanceRepository) AddFavorite(favorite *model.PublicInstanceFavorite) error {

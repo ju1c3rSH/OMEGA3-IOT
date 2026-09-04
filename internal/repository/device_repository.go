@@ -10,6 +10,7 @@ type InstanceRepository interface {
 	FindByID(id uint) (*model.Instance, error)
 	FindByUUID(instanceUUID string) (*model.Instance, error)
 	FindByOwnerUUID(ownerUUID string) ([]model.Instance, error)
+	FindByOwnerUUIDs(ownerUUIDs []string) ([]model.Instance, error)
 	FindOwnerUUIDByUUID(instanceUUID string) (string, error)
 	FindByUUIDs(instanceUUIDs []string) ([]model.Instance, error)
 	Update(instance *model.Instance) error
@@ -18,6 +19,8 @@ type InstanceRepository interface {
 	DeleteByUUID(instanceUUID string) error
 	UpdateProperties(instanceUUID string, properties model.Properties) error
 	UpdateOnlineStatus(instanceUUID string, online bool, lastSeen int64) error
+	FindStaleOnlineUUIDs(threshold int64) ([]string, error)
+	MarkOfflineByUUIDs(instanceUUIDs []string, lastSeen int64) error
 	Exists(instanceUUID string) (bool, error)
 	// ExistsByOwner performs indexed point lookup SELECT 1 FROM instances
 	// WHERE instance_uuid=? AND owner_uuid=? LIMIT 1.
@@ -114,6 +117,35 @@ func (r *gormInstanceRepository) FindByUUIDs(instanceUUIDs []string) ([]model.In
 	return result, nil
 }
 
+func (r *gormInstanceRepository) FindByOwnerUUIDs(ownerUUIDs []string) ([]model.Instance, error) {
+	if len(ownerUUIDs) == 0 {
+		return []model.Instance{}, nil
+	}
+	seen := make(map[string]struct{}, len(ownerUUIDs))
+	uniq := make([]string, 0, len(ownerUUIDs))
+	for _, id := range ownerUUIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			uniq = append(uniq, id)
+		}
+	}
+	const batchSize = 1000
+	var result []model.Instance
+	for i := 0; i < len(uniq); i += batchSize {
+		end := i + batchSize
+		if end > len(uniq) {
+			end = len(uniq)
+		}
+		batch := uniq[i:end]
+		var batchResult []model.Instance
+		if err := r.db.Where("owner_uuid IN ?", batch).Find(&batchResult).Error; err != nil {
+			return nil, err
+		}
+		result = append(result, batchResult...)
+	}
+	return result, nil
+}
+
 func (r *gormInstanceRepository) Update(instance *model.Instance) error {
 	return r.db.Save(instance).Error
 }
@@ -160,6 +192,29 @@ func (r *gormInstanceRepository) ExistsByOwner(ownerUUID, instanceUUID string) (
 		return false, result.Error
 	}
 	return len(dummy) > 0, nil
+}
+
+func (r *gormInstanceRepository) FindStaleOnlineUUIDs(threshold int64) ([]string, error) {
+	var uuids []string
+	err := r.db.Model(&model.Instance{}).
+		Where("online = ? AND last_seen < ?", true, threshold).
+		Pluck("instance_uuid", &uuids).Error
+	return uuids, err
+}
+
+// MarkOfflineByUUIDs flips online=0 in a single statement. When lastSeen <= 0
+// the stale last_seen value is preserved (see checkStaleDevices for semantics).
+func (r *gormInstanceRepository) MarkOfflineByUUIDs(instanceUUIDs []string, lastSeen int64) error {
+	if len(instanceUUIDs) == 0 {
+		return nil
+	}
+	updates := map[string]interface{}{"online": false}
+	if lastSeen > 0 {
+		updates["last_seen"] = lastSeen
+	}
+	return r.db.Model(&model.Instance{}).
+		Where("instance_uuid IN ?", instanceUUIDs).
+		Updates(updates).Error
 }
 
 func (r *gormInstanceRepository) UpdateProperties(instanceUUID string, properties model.Properties) error {

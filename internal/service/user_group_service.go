@@ -11,14 +11,14 @@ import (
 
 // UserGroupService handles group management business logic.
 type UserGroupService struct {
-	db                  *gorm.DB
-	groupRepo           repository.UserGroupRepository
-	memberRepo          repository.GroupMemberRepository
-	policyRepo          repository.GroupPolicyRepository
-	inviteRepo          repository.GroupInviteRepository
-	deviceShareRepo     repository.GroupDeviceShareRepository
-	instanceRepo        repository.InstanceRepository
-	userRepo            repository.UserRepository
+	db              *gorm.DB
+	groupRepo       repository.UserGroupRepository
+	memberRepo      repository.GroupMemberRepository
+	policyRepo      repository.GroupPolicyRepository
+	inviteRepo      repository.GroupInviteRepository
+	deviceShareRepo repository.GroupDeviceShareRepository
+	instanceRepo    repository.InstanceRepository
+	userRepo        repository.UserRepository
 }
 
 // NewUserGroupService creates a new UserGroupService.
@@ -101,14 +101,27 @@ func (s *UserGroupService) GetUserGroups(userUUID string) ([]model.UserGroup, er
 		return nil, err
 	}
 
+	groupUUIDs := make([]string, 0, len(members))
+	for _, m := range members {
+		groupUUIDs = append(groupUUIDs, m.GroupUUID)
+	}
+	groupsByUUID := make(map[string]model.UserGroup, len(groupUUIDs))
+	found, err := s.groupRepo.FindByUUIDs(groupUUIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range found {
+		groupsByUUID[g.GroupUUID] = g
+	}
+
 	var groups []model.UserGroup
 	for _, m := range members {
-		group, err := s.groupRepo.FindByUUID(m.GroupUUID)
-		if err != nil {
+		group, ok := groupsByUUID[m.GroupUUID]
+		if !ok {
 			continue // skip if group not found
 		}
 		if group.Status == model.GroupStatusActive {
-			groups = append(groups, *group)
+			groups = append(groups, group)
 		}
 	}
 	return groups, nil
@@ -561,21 +574,24 @@ func (s *UserGroupService) getAllGroupMemberDevices(groupUUID string) ([]model.G
 		return nil, err
 	}
 
-	var allShares []model.GroupDeviceShare
+	ownerUUIDs := make([]string, 0, len(members))
 	for _, m := range members {
-		devices, err := s.instanceRepo.FindByOwnerUUID(m.UserUUID)
-		if err != nil {
-			continue
-		}
-		for _, d := range devices {
-			allShares = append(allShares, model.GroupDeviceShare{
-				GroupUUID:    groupUUID,
-				InstanceUUID: d.InstanceUUID,
-				OwnerUUID:    d.OwnerUUID,
-				Permission:   "read_write",
-				Status:       model.GroupDeviceShareStatusActive,
-			})
-		}
+		ownerUUIDs = append(ownerUUIDs, m.UserUUID)
+	}
+	devices, err := s.instanceRepo.FindByOwnerUUIDs(ownerUUIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	allShares := make([]model.GroupDeviceShare, 0, len(devices))
+	for _, d := range devices {
+		allShares = append(allShares, model.GroupDeviceShare{
+			GroupUUID:    groupUUID,
+			InstanceUUID: d.InstanceUUID,
+			OwnerUUID:    d.OwnerUUID,
+			Permission:   "read_write",
+			Status:       model.GroupDeviceShareStatusActive,
+		})
 	}
 	return allShares, nil
 }
