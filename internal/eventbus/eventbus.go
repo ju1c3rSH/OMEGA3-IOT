@@ -2,10 +2,13 @@ package eventbus
 
 import (
 	"context"
+	"expvar"
 	"fmt"
 	"log"
 	"reflect"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 )
 
 // EventType represents the type of an event
@@ -25,18 +28,38 @@ type BaseEvent struct {
 	Source    string    `json:"source"`
 }
 
-func (e BaseEvent) GetType() EventType    { return e.Type }
-func (e BaseEvent) GetTimestamp() int64   { return e.Timestamp }
-func (e BaseEvent) GetSource() string     { return e.Source }
+func (e BaseEvent) GetType() EventType  { return e.Type }
+func (e BaseEvent) GetTimestamp() int64 { return e.Timestamp }
+func (e BaseEvent) GetSource() string   { return e.Source }
 
 // EventHandler is a function that handles events
 type EventHandler func(ctx context.Context, event Event) error
 
-// Subscription represents an event subscription
+// defaultQueueSize is the bounded queue size per subscription (drop-newest)
+const defaultQueueSize = 512
+
+// droppedStats tracks dropped events per event type (visible at /debug/vars)
+var droppedStats = expvar.NewMap("eventbus.dropped")
+
+// dropLogCounts samples drop logs: one log line per 1000 drops per event type
+var dropLogCounts sync.Map // map[EventType]*atomic.Int64
+
+// envelope carries the publish-time context alongside the event
+type envelope struct {
+	ctx   context.Context
+	event Event
+}
+
+// Subscription represents an event subscription with a dedicated dispatch goroutine
 type Subscription struct {
 	ID        string
 	EventType EventType
 	Handler   EventHandler
+
+	// queue is never closed; dispatcher exits via done, so Publish never
+	// sends on a closed channel
+	queue chan envelope
+	done  chan struct{}
 }
 
 // EventBus is the central event distribution system
@@ -44,6 +67,7 @@ type EventBus struct {
 	handlers map[EventType][]*Subscription
 	mu       sync.RWMutex
 	wg       sync.WaitGroup
+	stopped  bool
 }
 
 // New creates a new EventBus instance
@@ -53,40 +77,36 @@ func New() *EventBus {
 	}
 }
 
-// Subscribe registers a handler for a specific event type
-// Returns a subscription ID that can be used to unsubscribe
+// Subscribe registers a handler for a specific event type and starts a
+// dedicated dispatch goroutine with a bounded queue.
+// Returns a subscription ID that can be used to unsubscribe.
+// Returns "" if the bus is already stopped.
 func (eb *EventBus) Subscribe(eventType EventType, handler EventHandler) string {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
+
+	if eb.stopped {
+		log.Printf("[EventBus] Subscribe %s ignored: bus stopped", eventType)
+		return ""
+	}
 
 	subID := generateSubscriptionID(eventType)
 	sub := &Subscription{
 		ID:        subID,
 		EventType: eventType,
 		Handler:   handler,
+		queue:     make(chan envelope, defaultQueueSize),
+		done:      make(chan struct{}),
 	}
 
 	eb.handlers[eventType] = append(eb.handlers[eventType], sub)
+	eb.wg.Add(1)
+	go eb.dispatch(sub)
 	log.Printf("[EventBus] Subscribed %s to event type %s", subID, eventType)
 	return subID
 }
 
-// SubscribeAsync registers an async handler that runs in a goroutine
-func (eb *EventBus) SubscribeAsync(eventType EventType, handler EventHandler) string {
-	wrappedHandler := func(ctx context.Context, event Event) error {
-		eb.wg.Add(1)
-		go func() {
-			defer eb.wg.Done()
-			if err := handler(ctx, event); err != nil {
-				log.Printf("[EventBus] Async handler error for %s: %v", eventType, err)
-			}
-		}()
-		return nil
-	}
-	return eb.Subscribe(eventType, wrappedHandler)
-}
-
-// Unsubscribe removes a subscription by ID
+// Unsubscribe removes a subscription by ID and stops its dispatch goroutine
 func (eb *EventBus) Unsubscribe(subscriptionID string) error {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
@@ -95,6 +115,7 @@ func (eb *EventBus) Unsubscribe(subscriptionID string) error {
 		for i, sub := range subs {
 			if sub.ID == subscriptionID {
 				eb.handlers[eventType] = append(subs[:i], subs[i+1:]...)
+				close(sub.done)
 				log.Printf("[EventBus] Unsubscribed %s from %s", subscriptionID, eventType)
 				return nil
 			}
@@ -103,23 +124,73 @@ func (eb *EventBus) Unsubscribe(subscriptionID string) error {
 	return fmt.Errorf("subscription %s not found", subscriptionID)
 }
 
-// Publish distributes an event to all registered handlers
+// Publish distributes an event to all subscribers via non-blocking enqueue.
+// If a subscriber's queue is full the event is dropped (drop-newest) and
+// counted in the eventbus.dropped expvar map.
 func (eb *EventBus) Publish(ctx context.Context, event Event) {
 	eb.mu.RLock()
-	handlers := eb.handlers[event.GetType()]
+	subs := eb.handlers[event.GetType()]
 	eb.mu.RUnlock()
 
-	if len(handlers) == 0 {
+	for _, sub := range subs {
+		select {
+		case sub.queue <- envelope{ctx: ctx, event: event}:
+		default:
+			droppedStats.Add(string(sub.EventType), 1)
+			if n := nextDropLog(sub.EventType); n == 1 || n%1000 == 0 {
+				log.Printf("[EventBus] queue full for %s, dropping events (dropped=%d total)", sub.EventType, n)
+			}
+		}
+	}
+}
+
+// dispatch drains the subscription queue until done is closed
+func (eb *EventBus) dispatch(sub *Subscription) {
+	defer eb.wg.Done()
+	for {
+		select {
+		case env := <-sub.queue:
+			eb.invoke(sub, env)
+		case <-sub.done:
+			return
+		}
+	}
+}
+
+// invoke runs the handler detached from the publish-time context (which may
+// already be cancelled, e.g. the 2s MQTT worker ctx) while preserving values
+func (eb *EventBus) invoke(sub *Subscription, env envelope) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[EventBus] handler %s panic on %s: %v\n%s", sub.ID, sub.EventType, r, debug.Stack())
+		}
+	}()
+	ctx := context.WithoutCancel(env.ctx)
+	if err := sub.Handler(ctx, env.event); err != nil {
+		log.Printf("[EventBus] Handler error for %s: %v", sub.EventType, err)
+	}
+}
+
+// Stop closes all subscription queues' dispatch loops and waits for every
+// dispatcher goroutine to exit. Idempotent; Publish after Stop just drops.
+func (eb *EventBus) Stop() {
+	eb.mu.Lock()
+	if eb.stopped {
+		eb.mu.Unlock()
 		return
 	}
-
-	for _, sub := range handlers {
-		go func(s *Subscription) {
-			if err := s.Handler(ctx, event); err != nil {
-				log.Printf("[EventBus] Handler error for %s: %v", s.EventType, err)
-			}
-		}(sub)
+	eb.stopped = true
+	for _, subs := range eb.handlers {
+		for _, sub := range subs {
+			close(sub.done)
+		}
 	}
+	eb.handlers = make(map[EventType][]*Subscription)
+	wg := &eb.wg
+	eb.mu.Unlock()
+
+	wg.Wait()
+	log.Printf("[EventBus] stopped, all dispatchers exited")
 }
 
 // PublishSync distributes an event synchronously
@@ -145,16 +216,16 @@ func (eb *EventBus) PublishSync(ctx context.Context, event Event) error {
 	return nil
 }
 
-// Wait waits for all async handlers to complete
-func (eb *EventBus) Wait() {
-	eb.wg.Wait()
-}
-
 // GetSubscribersCount returns the number of subscribers for an event type
 func (eb *EventBus) GetSubscribersCount(eventType EventType) int {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
 	return len(eb.handlers[eventType])
+}
+
+func nextDropLog(eventType EventType) int64 {
+	c, _ := dropLogCounts.LoadOrStore(eventType, new(atomic.Int64))
+	return c.(*atomic.Int64).Add(1)
 }
 
 // generateSubscriptionID creates a unique subscription ID

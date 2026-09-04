@@ -13,9 +13,13 @@ import (
 	"OMEGA3-IOT/internal/repository"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/utils"
+	"context"
 	"fmt"
 
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 // var globalMQTTService *service.MQTTService // 全局 MQTT 服务变量 不用了 用依赖注入
@@ -24,6 +28,9 @@ var iotdbClient *db.IOTDBClient
 var userService *service.UserService
 
 func main() {
+	sigCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
 	s := "gopher"
 	fmt.Printf("Hello and welcome, %s!\n", s)
 	//cfg, err := config.DeLoadConfig(".")
@@ -159,8 +166,11 @@ func main() {
 	publicInstanceService := service.NewPublicInstanceService(db.DB)
 	log.Println("[Main] PublicInstanceService created")
 
-	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService)
+	httpApiErr := http_api.Run(mqttService, userHandler, deviceHandler, logHandler, cfg, deviceService, deviceShareService, deviceFolderHandler, jwtAuth, pushHandler, userGroupHandler, adminHandler, publicInstanceService, sigCtx.Done())
 	log.Println("[Main] After calling http_api.Run")
+	stopSignals()
+	eventBus.Stop()
+	log.Println("[Main] EventBus stopped")
 	if httpApiErr != nil {
 		log.Panicf("[Main] Error starting HTTP server: %v", httpApiErr)
 	}

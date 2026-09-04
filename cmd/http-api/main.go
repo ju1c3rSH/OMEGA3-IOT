@@ -8,7 +8,9 @@ import (
 	"OMEGA3-IOT/internal/push"
 	"OMEGA3-IOT/internal/service"
 	"OMEGA3-IOT/internal/utils"
+	"context"
 	"crypto/tls"
+	"errors"
 	"net/http"
 	_ "net/http/pprof"
 	"time"
@@ -24,7 +26,7 @@ import (
 // @host localhost:1222
 // @BasePath /api/v1
 
-func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *handler.DeviceFolderHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler, adminHandler *handler.AdminHandler, publicInstanceService *service.PublicInstanceService) error {
+func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, deviceHandler *handler.DeviceHandler, logHandler *logger.LogHandler, config config.Config, deviceService *service.DeviceService, deviceShareService *service.DeviceShareService, deviceFolderHandler *handler.DeviceFolderHandler, jwtAuth *MiddleWares.JWTAuth, pushHandler *push.PushHandler, userGroupHandler *handler.UserGroupHandler, adminHandler *handler.AdminHandler, publicInstanceService *service.PublicInstanceService, shutdown <-chan struct{}) error {
 
 	log.Println("[HTTP_API] Run function called")
 
@@ -74,8 +76,19 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 		MaxHeaderBytes:    1 << 20,
 	}
 
+	var certFile, keyFile string
+	errCh := make(chan error, 1)
+	serve := func() {
+		if config.Server.TLSEnabled {
+			errCh <- srv.ListenAndServeTLS(certFile, keyFile)
+			return
+		}
+		errCh <- srv.ListenAndServe()
+	}
+
 	if config.Server.TLSEnabled {
-		certFile, keyFile, err := utils.EnsureCertificates(config.Server.CertFile, config.Server.KeyFile)
+		var err error
+		certFile, keyFile, err = utils.EnsureCertificates(config.Server.CertFile, config.Server.KeyFile)
 		if err != nil {
 			log.Fatalf("Failed to prepare TLS certificates: %v", err)
 		}
@@ -88,8 +101,25 @@ func Run(mqttService *service.MQTTService, userHandler *handler.UserHandler, dev
 				tls.CurveP256,
 			},
 		}
-		return srv.ListenAndServeTLS(certFile, keyFile)
 	}
+	go serve()
 
-	return srv.ListenAndServe()
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-shutdown:
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("[HTTP_API] graceful shutdown error: %v", err)
+		}
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		log.Println("[HTTP_API] server shut down gracefully")
+		return nil
+	}
 }
